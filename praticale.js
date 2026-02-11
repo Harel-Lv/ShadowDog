@@ -1,7 +1,7 @@
-class Practice {
+class Particle {
     constructor(game) {
         this.game = game;
-        this.markorForDeletion = false; // Flag to mark this object for deletion
+        this.markForDeletion = false; // Flag to mark this object for deletion
         // Initialization code
     }
 
@@ -11,12 +11,12 @@ class Practice {
         this.y -= this.speedY; // Move the object based on game speed
         this.size = this.size * 0.95;
         if (this.size < 0.5) {
-            this.markorForDeletion = true; // Mark for deletion if size is too small
+            this.markForDeletion = true; // Mark for deletion if size is too small
         }
     }
 }
 
-export class Dust extends Practice {
+export class Dust extends Particle {
     constructor(game, x, y) {
         super(game);
         this.x = x;
@@ -34,7 +34,7 @@ export class Dust extends Practice {
         context.fill();
     }
 }
-export class fire extends Practice {
+export class Fire extends Particle {
     constructor(game, x, y) {
         super(game);
         this.image = document.getElementById('fire');
@@ -53,14 +53,13 @@ export class fire extends Practice {
     }
 }
 
-export class splash extends Practice {
+export class Splash extends Particle {
     constructor(game, x, y) {
         super(game);
-       
+        this.size = 50 + Math.random() * 100; // Random size between 50 and 150
         this.x = x * this.size * 0.5; // Adjust x position based on size
         this.y = y * this.size * 0.5; // Adjust y position based on size
         this.gravity = 1; // Gravity effect for splash
-        this.size = 50 + Math.random() * 100; // Random size between 50 and 150
         this.speedX = Math.random() * 6 - 3; // Random horizontal speed
         this.speedY = Math.random() * 2 + 2; // Random vertical speed 
         this.image = document.getElementById('fire');

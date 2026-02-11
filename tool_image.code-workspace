@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "tool_image"
+		},
+		{
+			"path": "background_image"
+		},
+		{
+			"path": "enemies"
+		}
+	]
+}

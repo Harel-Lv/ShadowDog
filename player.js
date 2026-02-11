@@ -1,42 +1,61 @@
 import { Sitting, Running ,Jumping, Falling, Rolling, Diving, Hit} from "./PlayerStates.js";
 import { Collision } from "./Collision.js";
+
+const PLAYER_CONFIG = {
+  width: 100,
+  height: 91.3,
+  weight: 1,
+  maxSpeed: 10,
+  fps: 20,
+  staminaMax: 100,
+  staminaRecovery: 10,
+  staminaDrainRate: 50,
+  jumpVelocity: -27,
+};
 // File: Player.js
 export class Player {
   constructor(game) {
     this.game = game;
-    this.width = 100;
-    this.height = 91.3;
+    this.jumpVelocity = PLAYER_CONFIG.jumpVelocity;
+    this.width = PLAYER_CONFIG.width;
+    this.height = PLAYER_CONFIG.height;
     this.x = 0;
     this.y = this.game.height - this.height - this.game.groundMargin; // Position player above the ground
     this.vy =0; // Vertical speed
-    this.weight = 1; // Weight for gravity effect
+    this.weight = PLAYER_CONFIG.weight; // Weight for gravity effect
     this.image = document.getElementById('player'); // 10 pixels above the ground
     this.speed = 0;
     this.frameX = 0; // Horizontal frame index for sprite animation
     this.frameY = 0; // Vertical frame index for sprite animation
-    this.maxSpeed = 10; // Maximum speed for horizontal movement
+    this.maxSpeed = PLAYER_CONFIG.maxSpeed; // Maximum speed for horizontal movement
     this.maxFrame = 5; // Maximum frame for animation
-    this.fps = 20; // Frames per second for animation
+    this.fps = PLAYER_CONFIG.fps; // Frames per second for animation
     this.frameInterval = 1000 / this.fps; // Interval between frames in milliseconds
     this.frameTimer = 0; // Timer to control frame updates
     this.states = [new Sitting(this.game), new Running(this.game), new Jumping(this.game), new Falling(this.game), new Rolling(this.game),
     new Diving(this.game),new Hit(this.game)]; // Array of player states
-    this.stamina = 100;            // ערך התחלתי
-    this.maxStamina = 100;
-    this.staminaRecovery = 10;     // כמה stamina מתמלאת בשנייה
-    this.staminaDrainRate = 50;    // כמה stamina נרוקן לשנייה בזמן ROLLING
+    this.stamina = PLAYER_CONFIG.staminaMax;            // ערך התחלתי
+    this.maxStamina = PLAYER_CONFIG.staminaMax;
+    this.staminaRecovery = PLAYER_CONFIG.staminaRecovery;     // כמה stamina מתמלאת בשנייה
+    this.staminaDrainRate = PLAYER_CONFIG.staminaDrainRate;    // כמה stamina נרוקן לשנייה בזמן ROLLING
   }
 
     update(input, deltaTime) {
         this.checkCollision(); // Check for collisions with enemies
-        // Handle input for the current state
-        this.currentState.handleInput(input);
-        this.x += this.speed;
-        if (input.includes('ArrowLeft')) this.speed = -this.maxSpeed; // Move left
-        else if (input.includes('ArrowRight')) this.speed = this.maxSpeed; // Move right
-        else this.speed = 0;
-        if (this.x < 0) this.x = 0; // Prevent moving off the left edge
-        if (this.x > this.game.width - this.width) this.x = this.game.width - this.width;
+        const canMove = this.game.hitFreezeTimer <= 0;
+        const inputToUse = canMove ? input : [];
+        // Always run state logic; freeze only blocks movement/input
+        this.currentState.handleInput(inputToUse);
+        if (canMove) {
+            if (inputToUse.includes('ArrowLeft')) this.speed = -this.maxSpeed; // Move left
+            else if (inputToUse.includes('ArrowRight')) this.speed = this.maxSpeed; // Move right
+            else this.speed = 0;
+            this.x += this.speed;
+            if (this.x < 0) this.x = 0; // Prevent moving off the left edge
+            if (this.x > this.game.width - this.width) this.x = this.game.width - this.width;
+        } else {
+            this.speed = 0;
+        }
 
         // vertical movement
         this.y += this.vy; // Gravity effect
@@ -51,14 +70,16 @@ export class Player {
         }
         else this.frameTimer += deltaTime; // Increment timer by deltaTime
 
-        // כל עוד לא ROLLING – למלא stamina בהדרגה
-        if (this.currentState !== this.states[4] && this.currentState !== this.states[5]) { // If not rolling
-            this.stamina += this.staminaRecovery * (deltaTime / 1000); // Increment stamina based on deltaTime
-            if (this.stamina > this.maxStamina) this.stamina = this.maxStamina; // Cap stamina at max value
-        } else {
-            // אם ROLLING – להוריד stamina בהדרגה
-            this.stamina -= this.staminaDrainRate * (deltaTime / 1000); // Decrement stamina based on deltaTime
-            if (this.stamina < 0) this.stamina = 0; // Prevent negative stamina
+        if (this.game.hitFreezeTimer <= 0) {
+            // כל עוד לא ROLLING – למלא stamina בהדרגה
+            if (this.currentState !== this.states[4] && this.currentState !== this.states[5]) { // If not rolling
+                this.stamina += this.staminaRecovery * (deltaTime / 1000); // Increment stamina based on deltaTime
+                if (this.stamina > this.maxStamina) this.stamina = this.maxStamina; // Cap stamina at max value
+            } else {
+                // אם ROLLING – להוריד stamina בהדרגה
+                this.stamina -= this.staminaDrainRate * (deltaTime / 1000); // Decrement stamina based on deltaTime
+                if (this.stamina < 0) this.stamina = 0; // Prevent negative stamina
+            }
         }
     }
     draw(context) {
@@ -86,6 +107,7 @@ export class Player {
             }
             else
             {
+                if (this.game.invulnTimer > 0) return;
                 this.setState(6, 0); // Set player state to hit
                 this.game.lives--; // Decrease player lives
                 if (this.game.lives <= 0) {

@@ -1,4 +1,4 @@
-import { Dust, fire, splash} from "./praticale.js";
+import { Dust, Fire, Splash } from "./praticale.js";
 
 const States = {
     SITTING: 0,
@@ -25,7 +25,7 @@ export class Sitting extends State {
     }
 
     enter() {
-        this.frameX = 0; // Reset horizontal frame index for sitting state
+        this.game.player.frameX = 0; // Reset horizontal frame index for sitting state
        this.game.player.frameY = 5; // Set the frame for sitting state
        this.game.player.maxFrame = 4; // Set the maximum frame for sitting state
     }
@@ -49,13 +49,13 @@ export class Running extends State {
     }
 
     enter() {
-        this.frameX = 0; 
+        this.game.player.frameX = 0; 
         this.game.player.frameY = 3;
         this.game.player.maxFrame = 6; // Set the maximum frame for running state
     }
 
     handleInput(input) {
-        this.game.praticles.push(new Dust(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height));
+        this.game.particles.push(new Dust(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height));
         if (input.includes('ArrowDown')) {
             this.game.player.setState(States.SITTING, 0);
         } else if (input.includes('ArrowUp')) {
@@ -75,7 +75,7 @@ export class Jumping extends State {
     enter() {
 // Set the frame for jumping state
         this.game.player.frameX = 0; // Reset horizontal frame index for jumping state
-        if (this.game.player.onGround()) this.game.player.vy = -27; // Jumping effect
+        if (this.game.player.onGround()) this.game.player.vy = this.game.player.jumpVelocity; // Jumping effect
 
         this.game.player.frameY = 1;
         this.game.player.maxFrame = 6; // Set the maximum frame for jumping state
@@ -100,7 +100,7 @@ export class Falling extends State {
     }
 
     enter() {
-        this.frameX = 0;
+        this.game.player.frameX = 0;
         this.game.player.frameY = 2;
         this.game.player.maxFrame = 6; // Set the maximum frame for falling state
     }
@@ -124,26 +124,26 @@ export class Rolling extends State {
     }
 
     enter() {
-        this.frameX = 0;
+        this.game.player.frameX = 0;
         this.game.player.frameY = 6;
         this.game.player.maxFrame = 6; // Set the maximum frame for falling state
     }
 
     handleInput(input) {
-        this.game.praticles.push(new fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height*0.05));
+        this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height*0.05));
         if (input.includes('ArrowDown')) {
             this.game.player.setState(States.SITTING, 0);
-        } else if (this.game.player.onGround() && !input.includes('Enter') || this.game.player.stamina <= 0) {
+        } else if ((this.game.player.onGround() && !input.includes('Enter')) || this.game.player.stamina <= 0) {
             this.game.player.setState(States.RUNNING, 1);
             for (let i = 0; i < 30; i++) {
-            this.game.praticles.unshift(new splash(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height * 0.5));
+            this.game.particles.unshift(new Splash(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height * 0.5));
             }
         }
-        else if (!this.game.player.onGround() && !input.includes('Enter')|| this.game.player.stamina <= 0) {
+        else if ((!this.game.player.onGround() && !input.includes('Enter')) || this.game.player.stamina <= 0) {
             this.game.player.setState(States.FALLING, 1);
         }
         else if (input.includes('ArrowUp') && this.game.player.onGround() && input.includes('Enter')) {
-            this.game.player.vy = -27; // Jumping effect while rolling
+            this.game.player.vy = this.game.player.jumpVelocity; // Jumping effect while rolling
         }
         else if (input.includes('ArrowDown') && this.game.player.stamina > 0) {
             this.game.player.setState(States.DIVING, 0);
@@ -157,18 +157,19 @@ export class Diving extends State {
     }
 
     enter() {
-        this.frameX = 0;
+        this.game.player.frameX = 0;
         this.game.player.frameY = 6;
         this.game.player.maxFrame = 6; // Set the maximum frame for falling state
     }
 
     handleInput(input) {
-        this.game.praticles.push(new fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height*0.05));
+        this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height*0.05));
         if (this.game.player.onGround()) {
-            this.game.player.setState(States.RUNNING, 1);
-        }
-        else if (this.game.player.onGround() && !input.includes('Enter') && this.game.player.stamina > 0) {
-            this.game.player.setState(States.ROLLING, 2);
+            if (input.includes('Enter') && this.game.player.stamina > 0) {
+                this.game.player.setState(States.ROLLING, 2);
+            } else {
+                this.game.player.setState(States.RUNNING, 1);
+            }
         }
     }
 }
@@ -182,6 +183,9 @@ export class Hit extends State {
         this.game.player.frameX = 0;
         this.game.player.frameY = 4;
         this.game.player.maxFrame = 10; // Set the maximum frame for falling state
+        const hitDuration = this.game.player.frameInterval * (this.game.player.maxFrame + 1);
+        this.game.hitFreezeTimer = hitDuration;
+        this.game.invulnTimer = hitDuration;
     }
 
     handleInput(input) {

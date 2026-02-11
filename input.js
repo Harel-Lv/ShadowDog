@@ -3,6 +3,10 @@ export class InputHandler {
         this.game = game;
         this.keys = [];
         window.addEventListener('keydown', e => {
+            if (e.code === 'KeyP' || e.key === 'p' || e.key === 'P') {
+                this.game.paused = !this.game.paused;
+                return;
+            }
             if ((e.key === 'ArrowUp' || 
                 e.key === 'ArrowDown' || 
                 e.key === 'ArrowLeft' || 
@@ -10,8 +14,6 @@ export class InputHandler {
                 e.key === 'Enter') 
                 && this.keys.indexOf(e.key) === -1) {
                 this.keys.push(e.key);
-            }else if (e.key === 'p' || e.key === 'P') {
-                game.paused = !game.paused;
             }
         });
  // Toggle debug mode
@@ -21,7 +23,9 @@ export class InputHandler {
                 e.key === 'ArrowLeft' ||
                 e.key === 'ArrowRight' ||
                 e.key === 'Enter') {
-                this.keys.splice(this.keys.indexOf(e.key), 1);
+                const index = this.keys.indexOf(e.key);
+                if (index !== -1) this.keys.splice(index, 1);
+                
             }
         });
         

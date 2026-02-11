@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,10 +8,60 @@
     <link rel="stylesheet" href="ShadowDog.css">
 </head>
 <body>
-      <div id="mainMenu">
-    <h1>Shadow Dog</h1>
-    <button id="startButton">Start Game</button>
-   
+  <div id="mainMenu">
+    <div class="menuCard">
+      <div class="menuBadge">RUNNER MODE</div>
+      <h1>Shadow Dog</h1>
+      <p class="menuTagline">Dash, dodge, survive. Reach the distance target.</p>
+    <div class="menuButtons">
+      <button id="startButton">Start Game</button>
+      <button id="scoresButton">High Scores</button>
+    </div>
+      <div class="menuHints">
+        <span>Arrows = Move</span>
+        <span>Enter = Roll</span>
+        <span>P = Pause</span>
+      </div>
+    </div>
+  </div>
+  <div id="preGameScreen" style="display: none;">
+    <div class="menuCard">
+      <div class="menuBadge">READY?</div>
+      <h2>Before You Play</h2>
+      <label class="menuLabel" for="playerName">Player Name</label>
+      <input id="playerName" type="text" maxlength="16" placeholder="Enter name">
+      <div class="menuLabel">Difficulty</div>
+      <div class="difficultyOptions">
+        <label><input type="radio" name="difficulty" value="easy"> Easy</label>
+        <label><input type="radio" name="difficulty" value="normal" checked> Normal</label>
+        <label><input type="radio" name="difficulty" value="hard"> Hard</label>
+      </div>
+      <div class="menuButtons">
+        <button id="confirmStart">Start</button>
+        <button id="cancelStart">Back</button>
+      </div>
+    </div>
+  </div>
+  <div id="scoresScreen" style="display: none;">
+    <h2>High Scores</h2>
+    <div class="scoresGrid">
+      <div class="scoresColumn">
+        <h3>Easy</h3>
+        <ol id="scoresListEasy"></ol>
+      </div>
+      <div class="scoresColumn">
+        <h3>Medium</h3>
+        <ol id="scoresListNormal"></ol>
+      </div>
+      <div class="scoresColumn">
+        <h3>Hard</h3>
+        <ol id="scoresListHard"></ol>
+      </div>
+    </div>
+    <div class="scoresActions">
+      <button id="backButton">Back</button>
+      <button id="resetScoresButton">Reset Scores</button>
+    </div>
   </div>
     <canvas id="canvas1"></canvas>
     <img id="player" src="tool_image/player (1).png">
