@@ -1,0 +1,115 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shadow Dog</title>
+    <link rel="stylesheet" href="ShadowDog.css">
+</head>
+<body>
+  <div id="authTopbar" class="authTopbar">
+    <span id="authStatusTop" class="authStatusTop">Guest</span>
+    <button id="openSignupButton" type="button" class="btn btn--ghost btn--sm">Sign Up</button>
+    <button id="openLoginButton" type="button" class="btn btn--primary btn--sm">Login</button>
+    <button id="logoutButton" type="button" class="btn btn--ghost btn--sm" style="display: none;">Logout</button>
+  </div>
+
+  <div id="authModal" class="authModal" style="display: none;">
+    <div class="authModalCard">
+      <h3 id="authModalTitle">Login</h3>
+      <input id="authUsername" type="text" maxlength="16" placeholder="Username">
+      <input id="authPassword" type="password" maxlength="64" placeholder="Password">
+      <div class="authModalActions">
+        <button id="authSubmitButton" type="button" class="btn btn--primary">Continue</button>
+        <button id="authCancelButton" type="button" class="btn btn--ghost">Cancel</button>
+      </div>
+      <p id="authStatus" class="authStatus">Enter username and password</p>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" style="display: none;"></div>
+
+  <div id="mainMenu">
+    <div class="menuCard">
+      <div class="menuBadge">RUNNER MODE</div>
+      <h1>Shadow Dog</h1>
+      <p class="menuTagline">Dash, dodge, survive. Reach the distance target.</p>
+    <div class="menuButtons">
+      <button id="startButton">Start Game</button>
+      <button id="scoresButton">High Scores</button>
+    </div>
+      <div class="menuHints">
+        <span>Arrows = Move</span>
+        <span>Enter = Roll</span>
+        <span>P = Pause</span>
+      </div>
+    </div>
+  </div>
+  <div id="preGameScreen" style="display: none;">
+    <div class="menuCard">
+      <div class="menuBadge">READY?</div>
+      <h2>Before You Play</h2>
+      <label class="menuLabel" for="playerName">Player Name</label>
+      <input id="playerName" type="text" maxlength="16" placeholder="Enter name">
+      <div class="menuLabel">Difficulty</div>
+      <div class="difficultyOptions">
+        <label><input type="radio" name="difficulty" value="easy"> Easy</label>
+        <label><input type="radio" name="difficulty" value="normal" checked> Normal</label>
+        <label><input type="radio" name="difficulty" value="hard"> Hard</label>
+      </div>
+      <div class="menuButtons">
+        <button id="confirmStart">Start</button>
+        <button id="cancelStart">Back</button>
+      </div>
+    </div>
+  </div>
+  <div id="scoresScreen" style="display: none;">
+    <h2>High Scores</h2>
+    <div class="scoresGrid">
+      <div class="scoresColumn">
+        <h3>Easy</h3>
+        <ol id="scoresListEasy"></ol>
+      </div>
+      <div class="scoresColumn">
+        <h3>Normal</h3>
+        <ol id="scoresListNormal"></ol>
+      </div>
+      <div class="scoresColumn">
+        <h3>Hard</h3>
+        <ol id="scoresListHard"></ol>
+      </div>
+    </div>
+    <div class="scoresActions">
+      <button id="backButton">Back</button>
+      <button id="resetScoresButton" style="display: none;">Reset Scores</button>
+    </div>
+  </div>
+    <canvas id="canvas1"></canvas>
+    <img id="player" src="assets/tool_image/player (1).png">
+     <button id="restartBtn" style="display: none;">Restart</button>
+
+    <img id="layer1" src="assets/background_image/layer-1.png">
+    <img id="layer2" src="assets/background_image/layer-2.png">
+    <img id="layer3" src="assets/background_image/layer-3.png">
+    <img id="layer4" src="assets/background_image/layer-4.png">
+    <img id="layer5" src="assets/background_image/layer-5.png">
+
+    <img id="enemy_fly" src="assets/tool_image/enemy_fly.png">
+    <img id="enemy_spider" src="assets/tool_image/enemy_spider_big.png">
+    <img id="enemy_plant" src="assets/tool_image/enemy_plant.png">
+
+    <img id="fire" src="assets/tool_image/fire.png">
+
+    <img id="boom" src="assets/tool_image/boom (1).png">
+
+    <img id="heart1" src="assets/tool_image/heart.png">
+    <img id="heart2" src="assets/tool_image/heart.png">
+    <img id="heart3" src="assets/tool_image/heart.png">
+    <img id="heart4" src="assets/tool_image/heart.png">
+    <img id="heart5" src="assets/tool_image/heart.png">
+
+    <script type="module" src="main.js"></script>
+
+
+</body>
+</html>
