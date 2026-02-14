@@ -44,6 +44,12 @@ window.addEventListener('load', () => {
         const authModalTitle = document.getElementById('authModalTitle');
         const authSubmitButton = document.getElementById('authSubmitButton');
         const authCancelButton = document.getElementById('authCancelButton');
+        const adminTokenModal = document.getElementById('adminTokenModal');
+        const adminTokenModalTitle = document.getElementById('adminTokenModalTitle');
+        const adminTokenInput = document.getElementById('adminTokenInput');
+        const adminTokenSubmitButton = document.getElementById('adminTokenSubmitButton');
+        const adminTokenCancelButton = document.getElementById('adminTokenCancelButton');
+        const adminTokenStatus = document.getElementById('adminTokenStatus');
         const logoutButton = document.getElementById('logoutButton');
         const authStatus = document.getElementById('authStatus');
         const authStatusTop = document.getElementById('authStatusTop');
@@ -83,6 +89,7 @@ window.addEventListener('load', () => {
         let authToken = sessionStorage.getItem(AUTH_TOKEN_KEY) || previousLocalToken;
         let currentUser = sessionStorage.getItem(AUTH_USER_KEY) || previousLocalUser;
         let authMode = 'login';
+        let adminTokenResolver = null;
         let toastTimer = null;
         let activeGameSessionId = null;
         const audio = new GameAudio({ muted: savedAudioMuted });
@@ -189,6 +196,32 @@ window.addEventListener('load', () => {
 
         function closeAuthModal() {
             authModal.style.display = 'none';
+        }
+
+        function closeAdminTokenModal() {
+            if (adminTokenModal) adminTokenModal.style.display = 'none';
+        }
+
+        function resolveAdminToken(value) {
+            const resolver = adminTokenResolver;
+            adminTokenResolver = null;
+            closeAdminTokenModal();
+            if (resolver) resolver(value);
+        }
+
+        function requestAdminToken(actionLabel) {
+            if (!adminTokenModal || !adminTokenInput) {
+                return Promise.resolve(window.prompt(`Admin token required to ${actionLabel}:`)?.trim() || '');
+            }
+            if (adminTokenResolver) return Promise.resolve('');
+            return new Promise((resolve) => {
+                adminTokenResolver = resolve;
+                if (adminTokenModalTitle) adminTokenModalTitle.textContent = 'Admin Verification';
+                if (adminTokenStatus) adminTokenStatus.textContent = `Enter admin token to ${actionLabel}`;
+                adminTokenInput.value = '';
+                adminTokenModal.style.display = 'flex';
+                adminTokenInput.focus();
+            });
         }
 
         async function authRequest(path, payload) {
@@ -334,7 +367,7 @@ window.addEventListener('load', () => {
                         if (!window.confirm(`Delete player "${username}" completely? This also removes their high scores and statistics.`)) {
                             return;
                         }
-                        const adminToken = window.prompt('Admin token required to delete player:');
+                        const adminToken = await requestAdminToken('delete this player');
                         if (!adminToken) return;
                         const headers = { 'x-admin-token': adminToken.trim() };
                         if (authToken) headers.Authorization = `Bearer ${authToken}`;
@@ -652,6 +685,37 @@ window.addEventListener('load', () => {
         authModal.addEventListener('click', (event) => {
             if (event.target === authModal) closeAuthModal();
         });
+        if (adminTokenCancelButton) {
+            adminTokenCancelButton.addEventListener('click', () => resolveAdminToken(''));
+        }
+        if (adminTokenSubmitButton) {
+            adminTokenSubmitButton.addEventListener('click', () => {
+                const token = (adminTokenInput?.value || '').trim();
+                if (!token) {
+                    if (adminTokenStatus) adminTokenStatus.textContent = 'Admin token is required';
+                    return;
+                }
+                resolveAdminToken(token);
+            });
+        }
+        if (adminTokenInput) {
+            adminTokenInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    const token = (adminTokenInput.value || '').trim();
+                    if (!token) {
+                        if (adminTokenStatus) adminTokenStatus.textContent = 'Admin token is required';
+                        return;
+                    }
+                    resolveAdminToken(token);
+                }
+            });
+        }
+        if (adminTokenModal) {
+            adminTokenModal.addEventListener('click', (event) => {
+                if (event.target === adminTokenModal) resolveAdminToken('');
+            });
+        }
         authSubmitButton.addEventListener('click', async () => {
             const username = authUsernameInput.value.trim();
             const password = authPasswordInput.value;
@@ -773,7 +837,7 @@ window.addEventListener('load', () => {
             updateAdminToolsVisibility();
             resetScoresButton.addEventListener('click', async () => {
                 if (!userCanSeeAdminReset()) return;
-                const adminToken = window.prompt('Admin token required to reset scores:');
+                const adminToken = await requestAdminToken('reset scores');
                 if (!adminToken) return;
                 const headers = {
                     'x-admin-token': adminToken.trim()
@@ -808,7 +872,7 @@ window.addEventListener('load', () => {
             updateAdminToolsVisibility();
             resetStatsButton.addEventListener('click', async () => {
                 if (!userCanSeeAdminReset()) return;
-                const adminToken = window.prompt('Admin token required to reset statistics:');
+                const adminToken = await requestAdminToken('reset statistics');
                 if (!adminToken) return;
                 const headers = {
                     'x-admin-token': adminToken.trim()

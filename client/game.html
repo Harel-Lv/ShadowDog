@@ -28,6 +28,17 @@
       <p id="authStatus" class="authStatus">Enter username and password</p>
     </div>
   </div>
+  <div id="adminTokenModal" class="authModal" style="display: none;">
+    <div class="authModalCard">
+      <h3 id="adminTokenModalTitle">Admin Verification</h3>
+      <input id="adminTokenInput" type="password" maxlength="128" placeholder="Admin token">
+      <div class="authModalActions">
+        <button id="adminTokenSubmitButton" type="button" class="btn btn--primary">Confirm</button>
+        <button id="adminTokenCancelButton" type="button" class="btn btn--ghost">Cancel</button>
+      </div>
+      <p id="adminTokenStatus" class="authStatus">Enter admin token to continue</p>
+    </div>
+  </div>
   <div id="toast" class="toast" role="status" aria-live="polite" style="display: none;"></div>
 
   <div id="mainMenu">
