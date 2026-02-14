@@ -25,7 +25,7 @@ services:
       - key: CORS_ORIGINS
         sync: false
 
-  - type: static
+  - type: static_site
     name: shadowdog-client
     rootDir: client
     buildCommand: ""
