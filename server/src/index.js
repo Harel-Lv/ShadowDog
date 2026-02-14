@@ -76,6 +76,14 @@ function createSessionToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+function timingSafeEqualString(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const aBuf = Buffer.from(a, 'utf8');
+  const bBuf = Buffer.from(b, 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
 function createInMemoryRateLimiter({
   max,
   windowMs,
@@ -122,7 +130,7 @@ export function createApp({
   authRateLimitMax = parsePositiveInt(process.env.AUTH_RATE_LIMIT_MAX, 10),
   authRateLimitWindowMs = parsePositiveInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60000),
   sessionTtlMs = parsePositiveInt(process.env.SESSION_TTL_MS, DEFAULT_SESSION_TTL_MS),
-  trustProxy = parseBoolean(process.env.TRUST_PROXY, false),
+  trustProxy = parseBoolean(process.env.TRUST_PROXY, process.env.NODE_ENV === 'production'),
 } = {}) {
   if (!pool || typeof pool.query !== 'function') {
     throw new Error('A database pool with a query method is required');
@@ -335,7 +343,7 @@ export function createApp({
 
   app.delete('/scores', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
     const providedToken = req.get('x-admin-token');
-    if (!adminResetToken || providedToken !== adminResetToken) {
+    if (!adminResetToken || !timingSafeEqualString(providedToken || '', adminResetToken)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     try {

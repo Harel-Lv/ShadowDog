@@ -23,13 +23,11 @@ window.addEventListener('load', () => {
         const scoresListHard = document.getElementById('scoresListHard');
         const backButton = document.getElementById('backButton');
         const resetScoresButton = document.getElementById('resetScoresButton');
+        const runtimeConfig = window.SHADOWDOG_CONFIG || {};
         const isAdmin = window.IS_ADMIN === true ||
             window.IS_ADMIN === 'true' ||
             window.IS_ADMIN === 1 ||
             window.IS_ADMIN === '1';
-        const adminUsername = typeof window.ADMIN_USERNAME === 'string'
-            ? window.ADMIN_USERNAME.trim().toLowerCase()
-            : '';
         const openSignupButton = document.getElementById('openSignupButton');
         const openLoginButton = document.getElementById('openLoginButton');
         const authUsernameInput = document.getElementById('authUsername');
@@ -66,12 +64,28 @@ window.addEventListener('load', () => {
         };
         let selectedDifficulty = 'normal';
         let playerName = 'Player';
-        let authToken = localStorage.getItem('shadowdog_auth_token') || '';
-        let currentUser = localStorage.getItem('shadowdog_auth_user') || '';
+        const AUTH_TOKEN_KEY = 'shadowdog_auth_token';
+        const AUTH_USER_KEY = 'shadowdog_auth_user';
+        const previousLocalToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+        const previousLocalUser = localStorage.getItem(AUTH_USER_KEY) || '';
+        let authToken = sessionStorage.getItem(AUTH_TOKEN_KEY) || previousLocalToken;
+        let currentUser = sessionStorage.getItem(AUTH_USER_KEY) || previousLocalUser;
         let authMode = 'login';
         let toastTimer = null;
 
-        const API_BASE = window.API_BASE || 'http://127.0.0.1:3002';
+        const configuredApiBase = window.API_BASE || runtimeConfig.apiBase || '';
+        const localhostFallback = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? 'http://127.0.0.1:3002'
+            : '';
+        const API_BASE = String(configuredApiBase || localhostFallback).replace(/\/+$/, '');
+        const apiUrl = (path) => `${API_BASE}${path}`;
+
+        if (previousLocalToken && !sessionStorage.getItem(AUTH_TOKEN_KEY)) {
+            sessionStorage.setItem(AUTH_TOKEN_KEY, previousLocalToken);
+            sessionStorage.setItem(AUTH_USER_KEY, previousLocalUser);
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            localStorage.removeItem(AUTH_USER_KEY);
+        }
 
         function showToast(message, type = 'error') {
             if (!toast) return;
@@ -88,8 +102,10 @@ window.addEventListener('load', () => {
             authToken = token || '';
             currentUser = username || '';
             if (authToken) {
-                localStorage.setItem('shadowdog_auth_token', authToken);
-                localStorage.setItem('shadowdog_auth_user', currentUser);
+                sessionStorage.setItem(AUTH_TOKEN_KEY, authToken);
+                sessionStorage.setItem(AUTH_USER_KEY, currentUser);
+                localStorage.removeItem(AUTH_TOKEN_KEY);
+                localStorage.removeItem(AUTH_USER_KEY);
                 authStatus.textContent = `Logged in as ${currentUser}`;
                 authStatusTop.textContent = currentUser;
                 openSignupButton.style.display = 'none';
@@ -97,8 +113,10 @@ window.addEventListener('load', () => {
                 logoutButton.style.display = 'inline-block';
                 if (currentUser) playerNameInput.value = currentUser;
             } else {
-                localStorage.removeItem('shadowdog_auth_token');
-                localStorage.removeItem('shadowdog_auth_user');
+                sessionStorage.removeItem(AUTH_TOKEN_KEY);
+                sessionStorage.removeItem(AUTH_USER_KEY);
+                localStorage.removeItem(AUTH_TOKEN_KEY);
+                localStorage.removeItem(AUTH_USER_KEY);
                 authStatus.textContent = 'Guest mode (scores will not be saved)';
                 authStatusTop.textContent = 'Guest';
                 openSignupButton.style.display = 'inline-block';
@@ -109,7 +127,7 @@ window.addEventListener('load', () => {
         }
 
         function userCanSeeAdminReset() {
-            return isAdmin || (adminUsername && currentUser && currentUser.trim().toLowerCase() === adminUsername);
+            return isAdmin;
         }
 
         function updateAdminResetVisibility() {
@@ -132,7 +150,7 @@ window.addEventListener('load', () => {
         }
 
         async function authRequest(path, payload) {
-            const res = await fetch(`${API_BASE}${path}`, {
+            const res = await fetch(apiUrl(path), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -151,7 +169,7 @@ window.addEventListener('load', () => {
                 difficulty: game.difficulty
             };
             try {
-                const res = await fetch(`${API_BASE}/scores`, {
+                const res = await fetch(apiUrl('/scores'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -171,7 +189,7 @@ window.addEventListener('load', () => {
             const byDifficulty = { easy: [], normal: [], hard: [] };
             const responses = await Promise.all(difficultyKeys.map(async (difficulty) => {
                 try {
-                    const res = await fetch(`${API_BASE}/scores?difficulty=${difficulty}&limit=50`);
+                    const res = await fetch(apiUrl(`/scores?difficulty=${difficulty}&limit=50`));
                     if (!res.ok) return { difficulty, data: [] };
                     const data = await res.json();
                     return { difficulty, data: Array.isArray(data) ? data : [] };
@@ -439,7 +457,7 @@ window.addEventListener('load', () => {
 
         logoutButton.addEventListener('click', async () => {
             if (authToken) {
-                await fetch(`${API_BASE}/auth/logout`, {
+                await fetch(apiUrl('/auth/logout'), {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${authToken}` }
                 }).catch(() => {});
@@ -501,7 +519,7 @@ window.addEventListener('load', () => {
                     'x-admin-token': adminToken.trim()
                 };
                 if (authToken) headers.Authorization = `Bearer ${authToken}`;
-                const res = await fetch(`${API_BASE}/scores`, {
+                const res = await fetch(apiUrl('/scores'), {
                     method: 'DELETE',
                     headers
                 }).catch(() => null);

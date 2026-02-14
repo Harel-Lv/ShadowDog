@@ -36,10 +36,6 @@ To show the `Reset Scores` button in the client, set:
 
 `'true'`, `1`, and `'1'` are also accepted.
 
-For username-based visibility in the client, set:
-
-`window.ADMIN_USERNAME = 'your-admin-username'`
-
 Also make sure the client API base and server port match (for example, `window.API_BASE = 'http://127.0.0.1:3002'` with `PORT=3002`).
 
 ## Automated tests
@@ -71,6 +67,8 @@ Optional server env vars:
 - `SESSION_TTL_MS` (default: `2592000000` = 30 days)
 - `TRUST_PROXY` (default: `false`, set to `true` behind a reverse proxy)
 
+Note: auth token is stored in `sessionStorage` (not `localStorage`) so browser restarts log users out by default.
+
 ## Deploy on Render
 
 This repo includes `render.yaml` for:
@@ -87,7 +85,8 @@ Steps:
    - `ADMIN_USERNAME`
    - `ADMIN_RESET_TOKEN`
    - `CORS_ORIGINS` (your client URL, e.g. `https://shadowdog-client.onrender.com`)
+   - `TRUST_PROXY=true`
 4. Run `server/db/schema.sql` on the new Render database.
 5. Update client API URL in `client/game.html`:
-   - set `window.API_BASE` to your API URL (e.g. `https://shadowdog-api.onrender.com`)
+   - set `window.SHADOWDOG_CONFIG.apiBase` to your API URL (e.g. `https://shadowdog-api.onrender.com`)
 6. Redeploy.
