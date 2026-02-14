@@ -76,7 +76,6 @@ window.addEventListener('load', () => {
         const AUTH_TOKEN_KEY = 'shadowdog_auth_token';
         const AUTH_USER_KEY = 'shadowdog_auth_user';
         const AUDIO_MUTED_KEY = 'shadowdog_audio_muted';
-        const ADMIN_PANEL_TOKEN_KEY = 'shadowdog_admin_panel_token';
         const previousLocalToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
         const previousLocalUser = localStorage.getItem(AUTH_USER_KEY) || '';
         const savedAudioMuted = localStorage.getItem(AUDIO_MUTED_KEY) === '1';
@@ -143,7 +142,6 @@ window.addEventListener('load', () => {
             } else {
                 sessionStorage.removeItem(AUTH_TOKEN_KEY);
                 sessionStorage.removeItem(AUTH_USER_KEY);
-                sessionStorage.removeItem(ADMIN_PANEL_TOKEN_KEY);
                 localStorage.removeItem(AUTH_TOKEN_KEY);
                 localStorage.removeItem(AUTH_USER_KEY);
                 authStatus.textContent = 'Guest mode (scores will not be saved)';
@@ -258,29 +256,14 @@ window.addEventListener('load', () => {
             return `${seconds}s`;
         }
 
-        function ensureAdminPanelToken() {
-            let token = sessionStorage.getItem(ADMIN_PANEL_TOKEN_KEY) || '';
-            if (token) return token;
-            token = (window.prompt('Admin token required:') || '').trim();
-            if (!token) return '';
-            sessionStorage.setItem(ADMIN_PANEL_TOKEN_KEY, token);
-            return token;
-        }
-
         async function adminFetch(path) {
             if (!authToken) throw new Error('Login as admin first');
-            const token = ensureAdminPanelToken();
-            if (!token) throw new Error('Admin token is required');
             const res = await fetch(apiUrl(path), {
                 headers: {
-                    'Authorization': `Bearer ${authToken}`,
-                    'x-admin-token': token
+                    'Authorization': `Bearer ${authToken}`
                 }
             });
             const data = await res.json().catch(() => ({}));
-            if (res.status === 403) {
-                sessionStorage.removeItem(ADMIN_PANEL_TOKEN_KEY);
-            }
             if (!res.ok) {
                 throw new Error(data.error || 'Failed admin request');
             }

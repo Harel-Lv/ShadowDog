@@ -488,7 +488,7 @@ export function createApp({
     }
   });
 
-  app.get('/admin/overview', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (_req, res) => {
+  app.get('/admin/overview', adminRateLimitMiddleware, requireAdmin, async (_req, res) => {
     try {
       const sql = `
         SELECT
@@ -509,7 +509,7 @@ export function createApp({
     }
   });
 
-  app.get('/admin/users', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
+  app.get('/admin/users', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
     try {
       const parsedLimit = Number.parseInt(req.query.limit || '100', 10);
       const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
