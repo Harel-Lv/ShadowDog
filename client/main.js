@@ -17,6 +17,7 @@ window.addEventListener('load', () => {
         let lastTime = null;
         let gameStarted = false;
         const restartBtn = document.getElementById('restartBtn');
+        const shareScoreBtn = document.getElementById('shareScoreBtn');
         const scoresButton = document.getElementById('scoresButton');
         const adminStatsButton = document.getElementById('adminStatsButton');
         const scoresScreen = document.getElementById('scoresScreen');
@@ -136,6 +137,55 @@ window.addEventListener('load', () => {
             toastTimer = setTimeout(() => {
                 toast.style.display = 'none';
             }, 2600);
+        }
+
+        function getPublicGameUrl() {
+            const configured = String(runtimeConfig.publicGameUrl || runtimeConfig.publicUrl || '').trim();
+            if (configured) return configured.replace(/\/+$/, '');
+            return `${window.location.origin}${window.location.pathname}`;
+        }
+
+        async function copyToClipboard(text) {
+            if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') return false;
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        function buildShareText(gameInstance) {
+            const didWin = gameInstance.distance >= gameInstance.targetDistance;
+            const verdict = didWin ? 'I won' : 'I scored';
+            const difficulty = String(gameInstance.difficulty || 'normal').toUpperCase();
+            const score = Number(gameInstance.score || 0);
+            return `${verdict} ${score} points on ${difficulty} in Shadow Dog. Can you beat me?`;
+        }
+
+        async function shareGameScore(gameInstance) {
+            if (!gameInstance) return;
+            const text = buildShareText(gameInstance);
+            const url = getPublicGameUrl();
+            const combined = `${text} ${url}`.trim();
+
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Shadow Dog Challenge',
+                        text,
+                        url
+                    });
+                    showToast('Score shared successfully.', 'success');
+                    return;
+                } catch (err) {
+                    if (String(err?.name || '') === 'AbortError') return;
+                }
+            }
+
+            window.open(`https://wa.me/?text=${encodeURIComponent(combined)}`, '_blank', 'noopener');
+            const copied = await copyToClipboard(combined);
+            showToast(copied ? 'Share text copied and WhatsApp opened.' : 'WhatsApp share opened.', 'success');
         }
 
         function setAuthState(token, username) {
@@ -655,6 +705,7 @@ window.addEventListener('load', () => {
                     });
                 }
                 restartBtn.style.display = 'block'; // Show restart button on game over
+                if (shareScoreBtn) shareScoreBtn.style.display = 'block';
             }
 
             game.draw(ctx);
@@ -665,6 +716,12 @@ window.addEventListener('load', () => {
          restartBtn.addEventListener('click', () => {
              location.reload(); // Reload the game on button click
          });
+
+        if (shareScoreBtn) {
+            shareScoreBtn.addEventListener('click', async () => {
+                await shareGameScore(game);
+            });
+        }
 
         setAuthState(authToken, currentUser);
         updateAudioToggleLabel();
@@ -783,6 +840,7 @@ window.addEventListener('load', () => {
             gameStarted = true;
             preGameScreen.style.display = 'none';
             canvas.style.display = 'block';
+            if (shareScoreBtn) shareScoreBtn.style.display = 'none';
             game = new Game(canvas.width, canvas.height);// Initialize lastTime to 0
             audio.ensureStarted();
             audio.startBgm();
