@@ -552,6 +552,20 @@ body {
   white-space: nowrap;
 }
 
+.adminDeleteBtn {
+  background: #3a1515;
+  color: #ffdede;
+  border: 1px solid rgba(255, 110, 110, 0.55);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.adminDeleteBtn:hover {
+  background: #5a2020;
+}
+
 .adminTable th {
   position: sticky;
   top: 0;

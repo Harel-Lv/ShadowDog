@@ -308,6 +308,8 @@ window.addEventListener('load', () => {
                     const tr = document.createElement('tr');
                     const registered = u.created_at ? new Date(u.created_at).toLocaleString() : '-';
                     const lastPlayed = u.last_played_at ? new Date(u.last_played_at).toLocaleString() : '-';
+                    const userId = Number(u.id || 0);
+                    const canDelete = Number.isInteger(userId) && userId > 0 && String(u.username || '').trim().toLowerCase() !== adminUsername;
                     tr.innerHTML = `
                         <td>${u.username || '-'}</td>
                         <td>${registered}</td>
@@ -316,8 +318,50 @@ window.addEventListener('load', () => {
                         <td>${u.games_won ?? 0}</td>
                         <td>${u.best_score ?? 0}</td>
                         <td>${lastPlayed}</td>
+                        <td>${canDelete ? `<button type="button" class="adminDeleteBtn" data-user-id="${userId}" data-username="${String(u.username || '').replace(/"/g, '&quot;')}">Delete</button>` : '-'}</td>
                     `;
                     adminUsersBody.appendChild(tr);
+                });
+                adminUsersBody.querySelectorAll('.adminDeleteBtn').forEach((btn) => {
+                    btn.addEventListener('click', async () => {
+                        const userId = Number(btn.getAttribute('data-user-id') || 0);
+                        const username = String(btn.getAttribute('data-username') || '');
+                        if (!Number.isInteger(userId) || userId <= 0) return;
+                        if (!window.confirm(`Delete player "${username}" completely? This also removes their high scores and statistics.`)) {
+                            return;
+                        }
+                        const adminToken = window.prompt('Admin token required to delete player:');
+                        if (!adminToken) return;
+                        const headers = { 'x-admin-token': adminToken.trim() };
+                        if (authToken) headers.Authorization = `Bearer ${authToken}`;
+                        const res = await fetch(apiUrl(`/admin/users/${userId}`), {
+                            method: 'DELETE',
+                            headers
+                        }).catch(() => null);
+                        if (!res) {
+                            showToast('Network error while deleting player.', 'error');
+                            return;
+                        }
+                        const payload = await res.json().catch(() => ({}));
+                        if (res.status === 401) {
+                            showToast('Login as admin is required.', 'error');
+                            return;
+                        }
+                        if (res.status === 403) {
+                            showToast('Forbidden: admin token or account is invalid.', 'error');
+                            return;
+                        }
+                        if (res.status === 404) {
+                            showToast('Player was not found.', 'error');
+                            return;
+                        }
+                        if (!res.ok) {
+                            showToast(payload.error || 'Failed to delete player.', 'error');
+                            return;
+                        }
+                        showToast(`Player "${username}" deleted.`, 'success');
+                        openAdminPanel();
+                    });
                 });
                 mainMenu.style.display = 'none';
                 scoresScreen.style.display = 'none';

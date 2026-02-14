@@ -151,6 +151,17 @@ class FakePool {
       return { rows: [], rowCount: deleted };
     }
 
+    if (normalizedSql === 'DELETE FROM users WHERE id = $1 RETURNING id, username') {
+      const userId = params[0];
+      const user = this.users.find(u => u.id === userId);
+      if (!user) return { rows: [] };
+      this.users = this.users.filter(u => u.id !== userId);
+      this.sessions = this.sessions.filter(s => s.user_id !== userId);
+      this.gameSessions = this.gameSessions.filter(gs => gs.user_id !== userId);
+      this.scores = this.scores.filter(sc => sc.user_id !== userId);
+      return { rows: [{ id: user.id, username: user.username }] };
+    }
+
     if (
       normalizedSql.includes('AS total_users') &&
       normalizedSql.includes('AS total_games') &&
@@ -844,5 +855,94 @@ test('admin per-user games and wins count only completed sessions', async () => 
     assert.equal(adminRow.games_played, 1);
     assert.equal(adminRow.games_won, 1);
     assert.equal(adminRow.total_play_time_ms, 3000);
+  });
+});
+
+test('DELETE /admin/users/:id deletes user and cascades scores/statistics', async () => {
+  await withServer(async ({ port }) => {
+    const adminSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const adminToken = adminSignup.body.token;
+
+    const playerSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'player1', password: 'secret123' },
+    });
+    const playerToken = playerSignup.body.token;
+    const playerId = playerSignup.body.user.id;
+
+    await sendJson({
+      port,
+      method: 'POST',
+      path: '/scores',
+      headers: { Authorization: `Bearer ${playerToken}` },
+      body: { score: 42, difficulty: 'easy' },
+    });
+    const started = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/start',
+      headers: { Authorization: `Bearer ${playerToken}` },
+    });
+    await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/end',
+      headers: { Authorization: `Bearer ${playerToken}` },
+      body: {
+        sessionId: started.body.id,
+        durationMs: 5000,
+        didWin: true,
+        score: 42,
+        difficulty: 'easy',
+      },
+    });
+
+    const deleted = await sendJson({
+      port,
+      method: 'DELETE',
+      path: `/admin/users/${playerId}`,
+      headers: { Authorization: `Bearer ${adminToken}`, 'x-admin-token': 'test-token' },
+    });
+    assert.equal(deleted.status, 200);
+    assert.equal(deleted.body.ok, true);
+    assert.equal(deleted.body.deleted_user.id, playerId);
+
+    const dashboard = await sendJson({
+      port,
+      method: 'GET',
+      path: '/admin/dashboard?limit=10',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.body.users.some((u) => u.username === 'player1'), false);
+  });
+});
+
+test('DELETE /admin/users/:id rejects deleting own admin account', async () => {
+  await withServer(async ({ port }) => {
+    const adminSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const adminToken = adminSignup.body.token;
+    const adminId = adminSignup.body.user.id;
+
+    const res = await sendJson({
+      port,
+      method: 'DELETE',
+      path: `/admin/users/${adminId}`,
+      headers: { Authorization: `Bearer ${adminToken}`, 'x-admin-token': 'test-token' },
+    });
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, { error: 'Cannot delete your own admin account' });
   });
 });

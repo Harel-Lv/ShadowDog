@@ -758,6 +758,25 @@ export function createApp({
     }
   });
 
+  app.delete('/admin/users/:userId', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
+    try {
+      const userId = Number.parseInt(req.params.userId, 10);
+      if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ error: 'Invalid user id' });
+      }
+      if (req.user?.id === userId) {
+        return res.status(400).json({ error: 'Cannot delete your own admin account' });
+      }
+      const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id, username', [userId]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      return res.json({ ok: true, deleted_user: result.rows[0] });
+    } catch {
+      return res.status(500).json({ error: 'Failed to delete user' });
+    }
+  });
+
   return app;
 }
 
