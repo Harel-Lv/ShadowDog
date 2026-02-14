@@ -9,6 +9,7 @@ export class GameAudio {
     this.sfxGain = null;
     this.bgmTimer = null;
     this.bgmStepIndex = 0;
+    this.noiseBufferCache = new Map();
   }
 
   ensureStarted() {
@@ -124,10 +125,15 @@ export class GameAudio {
     if (!this.ensureStarted()) return;
     if (this.muted) return;
     const bufferLength = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
-    const buffer = this.ctx.createBuffer(1, bufferLength, this.ctx.sampleRate);
-    const channel = buffer.getChannelData(0);
-    for (let i = 0; i < bufferLength; i += 1) {
-      channel[i] = (Math.random() * 2 - 1) * (1 - i / bufferLength);
+    const cacheKey = `${this.ctx.sampleRate}:${bufferLength}`;
+    let buffer = this.noiseBufferCache.get(cacheKey);
+    if (!buffer) {
+      buffer = this.ctx.createBuffer(1, bufferLength, this.ctx.sampleRate);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < bufferLength; i += 1) {
+        channel[i] = (Math.random() * 2 - 1) * (1 - i / bufferLength);
+      }
+      this.noiseBufferCache.set(cacheKey, buffer);
     }
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;

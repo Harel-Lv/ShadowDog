@@ -64,8 +64,8 @@ window.addEventListener('load', () => {
         const ENEMY_INTERVAL_STEP = 50;
         const SPEED_STEP = 0.2;
         const MAX_SPEED = 8;
-        const MAX_ENEMIES = 14;
-        const MAX_PARTICLES = 280;
+        const MAX_ENEMIES = 12;
+        const MAX_PARTICLES = 140;
         const DEFAULT_TARGET_DISTANCE = 200;
         const DIFFICULTY_SETTINGS = {
             easy: { targetDistance: 100, enemyMultiplier: 2, minEnemyInterval: 600 },
@@ -591,7 +591,7 @@ window.addEventListener('load', () => {
         function animate(timeStamp) {
             if (!gameStarted || !game) return;
             if (lastTime === null) lastTime = timeStamp;
-            const deltaTime = timeStamp - lastTime;
+            const deltaTime = Math.min(50, timeStamp - lastTime);
             lastTime = timeStamp; // Convert to seconds
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if(!game.paused) {

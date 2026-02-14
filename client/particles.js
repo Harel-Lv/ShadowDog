@@ -9,7 +9,7 @@ class Particle {
         // Update logic
         this.x -= this.game.speed + this.speedX;
         this.y -= this.speedY; // Move the object based on game speed
-        this.size = this.size * 0.95;
+        this.size = this.size * 0.9;
         if (this.size < 0.5) {
             this.markForDeletion = true; // Mark for deletion if size is too small
         }
@@ -40,7 +40,7 @@ export class Fire extends Particle {
         this.image = document.getElementById('fire');
         this.x = x;
         this.y = y;
-        this.size = 50 + Math.random() * 100; // Random size between 50 and 150
+        this.size = 28 + Math.random() * 34;
         this.speedX = 1;
         this.speedY = 1; 
     }
@@ -56,7 +56,7 @@ export class Fire extends Particle {
 export class Splash extends Particle {
     constructor(game, x, y) {
         super(game);
-        this.size = 50 + Math.random() * 100; // Random size between 50 and 150
+        this.size = 26 + Math.random() * 30;
         this.x = x - this.size * 0.5; // Spawn around collision center
         this.y = y - this.size * 0.5; // Spawn around collision center
         this.gravity = 1; // Gravity effect for splash

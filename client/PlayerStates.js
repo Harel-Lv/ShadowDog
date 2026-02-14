@@ -55,7 +55,7 @@ export class Running extends State {
     }
 
     handleInput(input, deltaTime) {
-        if (this.game.player.shouldEmitEffect('dust', 40, deltaTime)) {
+        if (this.game.player.shouldEmitEffect('dust', 70, deltaTime)) {
             this.game.particles.push(new Dust(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height));
         }
         if (input.includes('ArrowDown')) {
@@ -133,7 +133,7 @@ export class Rolling extends State {
     }
 
     handleInput(input, deltaTime) {
-        if (this.game.player.shouldEmitEffect('fire', 50, deltaTime)) {
+        if (this.game.player.shouldEmitEffect('fire', 90, deltaTime)) {
             this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height * 0.05));
         }
         if (this.game.player.stamina <= 0) {
@@ -147,8 +147,8 @@ export class Rolling extends State {
             this.game.player.setState(States.SITTING, 0);
         } else if (this.game.player.onGround() && !input.includes('Enter')) {
             this.game.player.setState(States.RUNNING, 1);
-            for (let i = 0; i < 16; i++) {
-            this.game.particles.unshift(new Splash(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height * 0.5));
+            for (let i = 0; i < 8; i++) {
+            this.game.particles.push(new Splash(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height * 0.5));
             }
         }
         else if (!this.game.player.onGround() && !input.includes('Enter')) {
@@ -172,7 +172,7 @@ export class Diving extends State {
     }
 
     handleInput(input, deltaTime) {
-        if (this.game.player.shouldEmitEffect('fire', 50, deltaTime)) {
+        if (this.game.player.shouldEmitEffect('fire', 90, deltaTime)) {
             this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height * 0.05));
         }
         if (this.game.player.onGround()) {

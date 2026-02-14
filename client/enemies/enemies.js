@@ -26,6 +26,7 @@ class Enemy {
 
     }
     draw(context) {
+        if (this.x + this.width < 0 || this.x > this.game.width) return;
         context.drawImage(this.image,this.frameX * this.width,0, this.width, this.height,this.x, 
         this.y, this.width, this.height);
     }
