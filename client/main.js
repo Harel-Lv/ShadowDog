@@ -86,6 +86,10 @@ window.addEventListener('load', () => {
         let toastTimer = null;
         let activeGameSessionId = null;
         const audio = new GameAudio({ muted: savedAudioMuted });
+        const unlockAndStartBgm = () => {
+            audio.ensureStarted();
+            audio.startBgm();
+        };
 
         const configuredApiBase = window.API_BASE || runtimeConfig.apiBase || '';
         const localhostFallback = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -629,6 +633,9 @@ window.addEventListener('load', () => {
 
         setAuthState(authToken, currentUser);
         updateAudioToggleLabel();
+        unlockAndStartBgm();
+        window.addEventListener('pointerdown', unlockAndStartBgm, { once: true, passive: true });
+        window.addEventListener('keydown', unlockAndStartBgm, { once: true });
 
         if (audioToggleButton) {
             audioToggleButton.addEventListener('click', () => {

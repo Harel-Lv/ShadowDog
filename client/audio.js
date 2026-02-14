@@ -10,6 +10,8 @@ export class GameAudio {
     this.bgmTimer = null;
     this.bgmStepIndex = 0;
     this.noiseBufferCache = new Map();
+    this.bgmTrack = null;
+    this.bgmTrackMode = false;
   }
 
   ensureStarted() {
@@ -36,6 +38,7 @@ export class GameAudio {
   setMuted(value) {
     this.muted = Boolean(value);
     this._applyMuteState();
+    if (this.bgmTrack) this.bgmTrack.muted = this.muted;
     return this.muted;
   }
 
@@ -44,16 +47,36 @@ export class GameAudio {
   }
 
   startBgm() {
-    if (this.bgmTimer) return;
-    if (!this.ensureStarted()) return;
-    this._playBgmStep();
-    this.bgmTimer = setInterval(() => this._playBgmStep(), 500);
+    if (this.bgmTrackMode) {
+      if (this.bgmTrack && this.bgmTrack.paused) {
+        this.bgmTrack.play().catch(() => {});
+      }
+      return;
+    }
+    this._initBgmTrack();
+    if (this.bgmTrack) {
+      this.stopBgm();
+      this.bgmTrackMode = true;
+      this.bgmTrack.currentTime = 0;
+      this.bgmTrack.play().catch(() => {
+        this.bgmTrackMode = false;
+        this._startSynthBgm();
+      });
+      return;
+    }
+    this._startSynthBgm();
   }
 
   stopBgm() {
-    if (!this.bgmTimer) return;
-    clearInterval(this.bgmTimer);
-    this.bgmTimer = null;
+    if (this.bgmTimer) {
+      clearInterval(this.bgmTimer);
+      this.bgmTimer = null;
+    }
+    if (this.bgmTrack) {
+      this.bgmTrack.pause();
+      this.bgmTrack.currentTime = 0;
+    }
+    this.bgmTrackMode = false;
   }
 
   onGameEnd(didWin) {
@@ -153,5 +176,26 @@ export class GameAudio {
     const target = this.muted ? 0.0001 : 1;
     this.masterGain.gain.cancelScheduledValues(now);
     this.masterGain.gain.setTargetAtTime(target, now, 0.02);
+  }
+
+  _startSynthBgm() {
+    if (this.bgmTimer) return;
+    if (!this.ensureStarted()) return;
+    this._playBgmStep();
+    this.bgmTimer = setInterval(() => this._playBgmStep(), 500);
+  }
+
+  _initBgmTrack() {
+    if (this.bgmTrack) return;
+    const configured = window.SHADOWDOG_CONFIG?.bgmTrackSrc || "";
+    const defaultTrack = "assets/WhatsApp%20Ptt%202026-02-14%20at%2020.46.51.ogg";
+    const src = String(configured || defaultTrack).trim();
+    if (!src) return;
+    const track = new Audio(src);
+    track.loop = true;
+    track.preload = "auto";
+    track.volume = 0.35;
+    track.muted = this.muted;
+    this.bgmTrack = track;
   }
 }
