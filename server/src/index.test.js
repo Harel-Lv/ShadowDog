@@ -8,8 +8,10 @@ class FakePool {
     this.scores = [];
     this.users = [];
     this.sessions = [];
+    this.gameSessions = [];
     this.nextScoreId = 1;
     this.nextUserId = 1;
+    this.nextGameSessionId = 1;
     this.healthShouldFail = false;
   }
 
@@ -43,6 +45,7 @@ class FakePool {
         username,
         username_norm: usernameNorm,
         password_hash: passwordHash,
+        created_at: new Date().toISOString(),
       };
       this.users.push(user);
       return { rows: [{ id: user.id, username: user.username }] };
@@ -112,6 +115,94 @@ class FakePool {
     if (normalizedSql === 'DELETE FROM scores') {
       this.scores = [];
       return { rows: [] };
+    }
+
+    if (normalizedSql.startsWith('INSERT INTO game_sessions (user_id, started_at) VALUES ($1, NOW()) RETURNING id, started_at')) {
+      const userId = params[0];
+      const row = {
+        id: this.nextGameSessionId++,
+        user_id: userId,
+        started_at: new Date().toISOString(),
+        ended_at: null,
+        duration_ms: null,
+        did_win: null,
+        score: null,
+        difficulty: null,
+      };
+      this.gameSessions.push(row);
+      return { rows: [{ id: row.id, started_at: row.started_at }] };
+    }
+
+    if (normalizedSql.startsWith('UPDATE game_sessions SET ended_at = NOW(), duration_ms = $3, did_win = $4, score = $5, difficulty = $6 WHERE id = $1 AND user_id = $2 AND ended_at IS NULL RETURNING id')) {
+      const [sessionId, userId, durationMs, didWin, score, difficulty] = params;
+      const row = this.gameSessions.find(s => s.id === sessionId && s.user_id === userId && s.ended_at === null);
+      if (!row) return { rows: [] };
+      row.ended_at = new Date().toISOString();
+      row.duration_ms = durationMs;
+      row.did_win = didWin;
+      row.score = score;
+      row.difficulty = difficulty;
+      return { rows: [{ id: row.id }] };
+    }
+
+    if (normalizedSql === 'DELETE FROM game_sessions') {
+      const deleted = this.gameSessions.length;
+      this.gameSessions = [];
+      return { rows: [], rowCount: deleted };
+    }
+
+    if (
+      normalizedSql.includes('AS total_users') &&
+      normalizedSql.includes('AS total_games') &&
+      normalizedSql.includes('AS total_play_time_ms') &&
+      normalizedSql.includes('AS total_wins')
+    ) {
+      const completed = this.gameSessions.filter(s => s.ended_at !== null || s.duration_ms !== null);
+      const totalPlayTime = completed.reduce((sum, s) => sum + Math.max(0, Number(s.duration_ms || 0)), 0);
+      const totalWins = completed.reduce((sum, s) => sum + (s.did_win ? 1 : 0), 0);
+      return {
+        rows: [{
+          total_users: this.users.length,
+          total_games: completed.length,
+          total_play_time_ms: totalPlayTime,
+          total_wins: totalWins,
+        }],
+      };
+    }
+
+    if (normalizedSql.includes('FROM users u LEFT JOIN game_sessions gs ON gs.user_id = u.id LEFT JOIN scores s ON s.user_id = u.id')) {
+      const limit = params[0] ?? 100;
+      const rows = this.users.map((u) => {
+        const sessions = this.gameSessions.filter(s => s.user_id === u.id);
+        const completed = sessions.filter(s => s.ended_at !== null || s.duration_ms !== null);
+        const totalPlayTime = completed.reduce((sum, s) => sum + Math.max(0, Number(s.duration_ms || 0)), 0);
+        const gamesWon = completed.reduce((sum, s) => sum + (s.did_win ? 1 : 0), 0);
+        const endedAtValues = sessions
+          .map(s => s.ended_at)
+          .filter(Boolean)
+          .sort((a, b) => String(a).localeCompare(String(b)));
+        const userBestScore = this.scores
+          .filter(sc => sc.user_id === u.id)
+          .reduce((max, sc) => Math.max(max, Number(sc.score || 0)), 0);
+        return {
+          id: u.id,
+          username: u.username,
+          created_at: u.created_at,
+          total_play_time_ms: totalPlayTime,
+          games_played: completed.length,
+          games_won: gamesWon,
+          last_played_at: endedAtValues.length ? endedAtValues[endedAtValues.length - 1] : null,
+          best_score: userBestScore || null,
+          username_norm: u.username_norm,
+        };
+      });
+      rows.sort((a, b) => {
+        const byName = String(a.username_norm).localeCompare(String(b.username_norm));
+        if (byName !== 0) return byName;
+        return String(b.created_at).localeCompare(String(a.created_at));
+      });
+      const sanitized = rows.slice(0, limit).map(({ username_norm, ...rest }) => rest);
+      return { rows: sanitized };
     }
 
     throw new Error(`Unexpected SQL in test: ${normalizedSql}`);
@@ -551,5 +642,144 @@ test('auth endpoints return 429 when auth rate limit exceeded', async () => {
       body: { username: 'Player2', password: 'secret123' },
     });
     assert.equal(second.status, 429);
+  });
+});
+
+test('analytics session start/end flow updates admin dashboard metrics', async () => {
+  await withServer(async ({ port }) => {
+    const adminSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const adminToken = adminSignup.body.token;
+
+    const started = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/start',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(started.status, 201);
+    assert.equal(typeof started.body.id, 'number');
+
+    const ended = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/end',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        sessionId: started.body.id,
+        durationMs: 12345,
+        didWin: true,
+        score: 10,
+        difficulty: 'easy',
+      },
+    });
+    assert.equal(ended.status, 200);
+    assert.deepEqual(ended.body, { ok: true });
+
+    const dashboard = await sendJson({
+      port,
+      method: 'GET',
+      path: '/admin/dashboard?limit=10',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.body.overview.total_games, 1);
+    assert.equal(dashboard.body.overview.total_wins, 1);
+    assert.equal(dashboard.body.overview.total_play_time_ms, 12345);
+    assert.equal(dashboard.body.users[0].games_played, 1);
+    assert.equal(dashboard.body.users[0].games_won, 1);
+    assert.equal(dashboard.body.users[0].total_play_time_ms, 12345);
+  });
+});
+
+test('analytics end rejects invalid session id', async () => {
+  await withServer(async ({ port }) => {
+    const signup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'Player1', password: 'secret123' },
+    });
+    const token = signup.body.token;
+
+    const ended = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/end',
+      headers: { Authorization: `Bearer ${token}` },
+      body: {
+        sessionId: -1,
+        durationMs: 1000,
+        didWin: false,
+        score: 0,
+        difficulty: 'easy',
+      },
+    });
+    assert.equal(ended.status, 400);
+    assert.deepEqual(ended.body, { error: 'Invalid sessionId' });
+  });
+});
+
+test('DELETE /admin/statistics requires admin token and clears sessions', async () => {
+  await withServer(async ({ port }) => {
+    const adminSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const adminToken = adminSignup.body.token;
+
+    const started = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/start',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/end',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        sessionId: started.body.id,
+        durationMs: 2000,
+        didWin: false,
+        score: 1,
+        difficulty: 'normal',
+      },
+    });
+
+    const forbidden = await sendJson({
+      port,
+      method: 'DELETE',
+      path: '/admin/statistics',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(forbidden.status, 403);
+
+    const allowed = await sendJson({
+      port,
+      method: 'DELETE',
+      path: '/admin/statistics',
+      headers: { Authorization: `Bearer ${adminToken}`, 'x-admin-token': 'test-token' },
+    });
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.body.ok, true);
+    assert.equal(allowed.body.deleted, 1);
+
+    const dashboard = await sendJson({
+      port,
+      method: 'GET',
+      path: '/admin/dashboard?limit=10',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.body.overview.total_games, 0);
+    assert.equal(dashboard.body.overview.total_play_time_ms, 0);
   });
 });
