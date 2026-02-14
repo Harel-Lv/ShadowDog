@@ -537,6 +537,55 @@ export function createApp({
     }
   });
 
+  app.get('/admin/dashboard', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
+    try {
+      const parsedLimit = Number.parseInt(req.query.limit || '200', 10);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 200;
+
+      const overviewSql = `
+        SELECT
+          (SELECT COUNT(*)::int FROM users) AS total_users,
+          (SELECT COUNT(*)::int FROM game_sessions) AS total_games,
+          (SELECT COALESCE(SUM(duration_ms), 0)::bigint FROM game_sessions) AS total_play_time_ms,
+          (SELECT COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int FROM game_sessions) AS total_wins
+      `;
+      const usersSql = `
+        SELECT
+          u.id,
+          u.username,
+          u.created_at,
+          COALESCE(SUM(gs.duration_ms), 0)::bigint AS total_play_time_ms,
+          COALESCE(COUNT(gs.id), 0)::int AS games_played,
+          COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
+          MAX(gs.ended_at) AS last_played_at,
+          MAX(s.score)::int AS best_score
+        FROM users u
+        LEFT JOIN game_sessions gs ON gs.user_id = u.id
+        LEFT JOIN scores s ON s.user_id = u.id
+        GROUP BY u.id, u.username, u.created_at
+        ORDER BY u.created_at DESC
+        LIMIT $1
+      `;
+
+      const [overviewResult, usersResult] = await Promise.all([
+        pool.query(overviewSql),
+        pool.query(usersSql, [limit]),
+      ]);
+
+      return res.json({
+        overview: overviewResult.rows[0] || {
+          total_users: 0,
+          total_games: 0,
+          total_play_time_ms: 0,
+          total_wins: 0,
+        },
+        users: usersResult.rows || [],
+      });
+    } catch {
+      return res.status(500).json({ error: 'Failed to fetch dashboard' });
+    }
+  });
+
   app.delete('/scores', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
     try {
       await pool.query('DELETE FROM scores');

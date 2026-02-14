@@ -265,7 +265,8 @@ window.addEventListener('load', () => {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                throw new Error(data.error || 'Failed admin request');
+                const message = data.error || `Failed admin request (${res.status})`;
+                throw new Error(message);
             }
             return data;
         }
@@ -273,10 +274,22 @@ window.addEventListener('load', () => {
         async function openAdminPanel() {
             if (!userCanSeeAdminReset()) return;
             try {
-                const [overview, users] = await Promise.all([
-                    adminFetch('/admin/overview'),
-                    adminFetch('/admin/users?limit=200')
-                ]);
+                let overview;
+                let users;
+                try {
+                    const dashboard = await adminFetch('/admin/dashboard?limit=200');
+                    overview = dashboard?.overview || {};
+                    users = Array.isArray(dashboard?.users) ? dashboard.users : [];
+                } catch (err) {
+                    const message = String(err?.message || '');
+                    if (!message.includes('(404)')) throw err;
+                    const [fallbackOverview, fallbackUsers] = await Promise.all([
+                        adminFetch('/admin/overview'),
+                        adminFetch('/admin/users?limit=200')
+                    ]);
+                    overview = fallbackOverview || {};
+                    users = Array.isArray(fallbackUsers) ? fallbackUsers : [];
+                }
                 const totalPlay = formatDuration(Number(overview.total_play_time_ms || 0));
                 adminOverview.innerHTML = `
                     <div><strong>Total users:</strong> ${overview.total_users ?? 0}</div>
@@ -285,7 +298,7 @@ window.addEventListener('load', () => {
                     <div><strong>Total wins:</strong> ${overview.total_wins ?? 0}</div>
                 `;
                 adminUsersBody.innerHTML = '';
-                (Array.isArray(users) ? users : []).forEach((u) => {
+                users.forEach((u) => {
                     const tr = document.createElement('tr');
                     const registered = u.created_at ? new Date(u.created_at).toLocaleString() : '-';
                     const lastPlayed = u.last_played_at ? new Date(u.last_played_at).toLocaleString() : '-';
