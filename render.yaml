@@ -27,7 +27,7 @@ services:
       - key: TRUST_PROXY
         value: "true"
       - key: AUTO_MIGRATE_ON_START
-        value: "false"
+        value: "true"
 
   - type: web
     name: shadowdog-client
