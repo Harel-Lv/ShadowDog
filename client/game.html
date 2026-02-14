@@ -143,10 +143,11 @@
     <img id="heart5" src="assets/tool_image/heart.png">
 
     <script>
-      window.SHADOWDOG_CONFIG = window.SHADOWDOG_CONFIG || {
-        apiBase: 'https://shadowdog-api.onrender.com',
-        adminUsername: 'harel'
-      };
+      window.SHADOWDOG_CONFIG = window.SHADOWDOG_CONFIG || {};
+      if (!window.SHADOWDOG_CONFIG.apiBase) {
+        window.SHADOWDOG_CONFIG.apiBase = 'https://shadowdog-api.onrender.com';
+      }
+      window.SHADOWDOG_CONFIG.adminUsername = 'harel';
       window.API_BASE = window.API_BASE || window.SHADOWDOG_CONFIG.apiBase || '';
     </script>
     <script type="module" src="main.js"></script>

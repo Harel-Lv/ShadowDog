@@ -31,7 +31,7 @@ window.addEventListener('load', () => {
         const backButton = document.getElementById('backButton');
         const resetScoresButton = document.getElementById('resetScoresButton');
         const runtimeConfig = window.SHADOWDOG_CONFIG || {};
-        const adminUsername = String(runtimeConfig.adminUsername || window.ADMIN_USERNAME || '').trim().toLowerCase();
+        const adminUsername = String(runtimeConfig.adminUsername || window.ADMIN_USERNAME || 'harel').trim().toLowerCase();
         const isAdmin = window.IS_ADMIN === true ||
             window.IS_ADMIN === 'true' ||
             window.IS_ADMIN === 1 ||
