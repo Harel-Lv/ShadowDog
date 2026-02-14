@@ -26,6 +26,7 @@ window.addEventListener('load', () => {
         const scoresListHard = document.getElementById('scoresListHard');
         const adminScreen = document.getElementById('adminScreen');
         const adminOverview = document.getElementById('adminOverview');
+        const adminWeeklyTrend = document.getElementById('adminWeeklyTrend');
         const adminUsersBody = document.getElementById('adminUsersBody');
         const adminBackButton = document.getElementById('adminBackButton');
         const resetStatsButton = document.getElementById('resetStatsButton');
@@ -346,6 +347,45 @@ window.addEventListener('load', () => {
             return `${seconds}s`;
         }
 
+        function formatShortDay(dateLike) {
+            const date = new Date(dateLike);
+            if (Number.isNaN(date.getTime())) return String(dateLike || '');
+            return date.toLocaleDateString(undefined, { weekday: 'short' });
+        }
+
+        function renderWeeklyTrendChart(container, rows) {
+            if (!container) return;
+            const data = Array.isArray(rows) ? rows.slice(0, 7) : [];
+            if (data.length === 0) {
+                container.innerHTML = '<div class="adminTrendLabel">No weekly data yet</div>';
+                return;
+            }
+            const width = 920;
+            const height = 180;
+            const padX = 32;
+            const padY = 20;
+            const plotW = width - padX * 2;
+            const plotH = height - padY * 2;
+            const maxUsers = Math.max(1, ...data.map((d) => Number(d?.users || 0)));
+            const points = data.map((d, i) => {
+                const x = padX + ((data.length === 1 ? 0 : i / (data.length - 1)) * plotW);
+                const y = padY + (1 - (Number(d?.users || 0) / maxUsers)) * plotH;
+                return { x, y, label: formatShortDay(d?.day), users: Number(d?.users || 0) };
+            });
+            const dPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
+            const pointsSvg = points.map((p) => `<circle class="adminTrendDot" cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="3.5"><title>${p.label}: ${p.users} players</title></circle>`).join('');
+            const labelsSvg = points.map((p) => `<text class="adminTrendLabel" x="${p.x.toFixed(2)}" y="${(height - 4).toFixed(2)}" text-anchor="middle">${p.label}</text>`).join('');
+            container.innerHTML = `
+                <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Weekly connected players trend">
+                    <line class="adminTrendAxis" x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}"></line>
+                    <line class="adminTrendAxis" x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}"></line>
+                    <path class="adminTrendPath" d="${dPath}"></path>
+                    ${pointsSvg}
+                    ${labelsSvg}
+                </svg>
+            `;
+        }
+
         async function adminFetch(path) {
             if (!authToken) throw new Error('Login as admin first');
             const res = await fetch(apiUrl(path), {
@@ -366,10 +406,15 @@ window.addEventListener('load', () => {
             try {
                 let overview;
                 let users;
+                let weeklyTraffic = [];
                 try {
-                    const dashboard = await adminFetch('/admin/dashboard?limit=200');
+                    const [dashboard, traffic] = await Promise.all([
+                        adminFetch('/admin/dashboard?limit=200'),
+                        adminFetch('/admin/traffic-week').catch(() => [])
+                    ]);
                     overview = dashboard?.overview || {};
                     users = Array.isArray(dashboard?.users) ? dashboard.users : [];
+                    weeklyTraffic = Array.isArray(traffic) ? traffic : [];
                 } catch (err) {
                     const message = String(err?.message || '');
                     if (!message.includes('(404)')) throw err;
@@ -379,6 +424,7 @@ window.addEventListener('load', () => {
                     ]);
                     overview = fallbackOverview || {};
                     users = Array.isArray(fallbackUsers) ? fallbackUsers : [];
+                    weeklyTraffic = await adminFetch('/admin/traffic-week').catch(() => []);
                 }
                 const totalPlay = formatDuration(Number(overview.total_play_time_ms || 0));
                 adminOverview.innerHTML = `
@@ -387,6 +433,7 @@ window.addEventListener('load', () => {
                     <div><strong>Total play time:</strong> ${totalPlay}</div>
                     <div><strong>Total wins:</strong> ${overview.total_wins ?? 0}</div>
                 `;
+                renderWeeklyTrendChart(adminWeeklyTrend, weeklyTraffic);
                 adminUsersBody.innerHTML = '';
                 users
                     .slice()

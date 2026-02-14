@@ -746,6 +746,34 @@ export function createApp({
     }
   });
 
+  app.get('/admin/traffic-week', adminRateLimitMiddleware, requireAdmin, async (_req, res) => {
+    try {
+      const sql = `
+        WITH day_buckets AS (
+          SELECT generate_series(
+            (CURRENT_DATE - INTERVAL '6 days')::date,
+            CURRENT_DATE::date,
+            INTERVAL '1 day'
+          ) AS day_start
+        )
+        SELECT
+          db.day_start::date AS day,
+          COUNT(gs.*)::int AS sessions,
+          COUNT(DISTINCT gs.user_id)::int AS users
+        FROM day_buckets db
+        LEFT JOIN game_sessions gs
+          ON gs.started_at >= db.day_start
+         AND gs.started_at < (db.day_start + INTERVAL '1 day')
+        GROUP BY db.day_start
+        ORDER BY db.day_start ASC
+      `;
+      const result = await pool.query(sql);
+      return res.json(Array.isArray(result.rows) ? result.rows : []);
+    } catch {
+      return res.status(500).json({ error: 'Failed to fetch weekly traffic' });
+    }
+  });
+
   app.delete('/scores', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
     try {
       await pool.query('DELETE FROM scores');
