@@ -521,7 +521,18 @@ export function createApp({
             )::bigint
             FROM game_sessions
           ) AS total_play_time_ms,
-          (SELECT COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int FROM game_sessions) AS total_wins
+          (
+            SELECT COALESCE(
+              SUM(
+                CASE
+                  WHEN (ended_at IS NOT NULL OR duration_ms IS NOT NULL) AND did_win THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int
+            FROM game_sessions
+          ) AS total_wins
       `;
       const result = await pool.query(sql);
       return res.json(result.rows[0] || {
@@ -575,7 +586,15 @@ export function createApp({
               ),
               0
             )::int AS games_played,
-            COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN (ended_at IS NOT NULL OR duration_ms IS NOT NULL) AND did_win THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int AS games_won,
             MAX(ended_at) AS last_played_at
           FROM game_sessions
           GROUP BY user_id
@@ -631,7 +650,18 @@ export function createApp({
             )::bigint
             FROM game_sessions
           ) AS total_play_time_ms,
-          (SELECT COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int FROM game_sessions) AS total_wins
+          (
+            SELECT COALESCE(
+              SUM(
+                CASE
+                  WHEN (ended_at IS NOT NULL OR duration_ms IS NOT NULL) AND did_win THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int
+            FROM game_sessions
+          ) AS total_wins
       `;
       const usersSql = `
         SELECT
@@ -669,7 +699,15 @@ export function createApp({
               ),
               0
             )::int AS games_played,
-            COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN (ended_at IS NOT NULL OR duration_ms IS NOT NULL) AND did_win THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int AS games_won,
             MAX(ended_at) AS last_played_at
           FROM game_sessions
           GROUP BY user_id
