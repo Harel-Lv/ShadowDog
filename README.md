@@ -66,6 +66,7 @@ Optional server env vars:
 - `ANALYTICS_RATE_LIMIT_WINDOW_MS` (default: `60000`)
 - `RATE_LIMITER_MAX_ENTRIES` (default: `10000`)
 - `SESSION_COOKIE_NAME` (default: `shadowdog_session`)
+- `SESSION_COOKIE_SAMESITE` (default: `lax` in dev, recommended `none` when client/API are on different sites)
 - `RATE_LIMIT_STORE` (default: `memory`, recommended: `database` on shared deployments)
 - `SESSION_TTL_MS` (default: `604800000` = 7 days)
 - `TRUST_PROXY` (default: `false`, recommended `1` behind a single reverse proxy hop)

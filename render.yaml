@@ -24,6 +24,8 @@ services:
         sync: false
       - key: SESSION_COOKIE_NAME
         value: shadowdog_session
+      - key: SESSION_COOKIE_SAMESITE
+        value: none
       - key: CORS_ORIGINS
         sync: false
       - key: TRUST_PROXY

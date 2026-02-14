@@ -71,17 +71,26 @@ function parseCookies(cookieHeader) {
     }, {});
 }
 
-function serializeSessionCookie(name, value, maxAgeSeconds, secure) {
+function normalizeSameSite(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'strict') return 'Strict';
+  if (normalized === 'none') return 'None';
+  return 'Lax';
+}
+
+function serializeSessionCookie(name, value, maxAgeSeconds, secure, sameSite) {
   const encodedName = encodeURIComponent(name);
   const encodedValue = encodeURIComponent(value);
+  const sameSiteValue = normalizeSameSite(sameSite);
+  const mustBeSecure = secure || sameSiteValue === 'None';
   const parts = [
     `${encodedName}=${encodedValue}`,
     'Path=/',
     `Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`,
     'HttpOnly',
-    'SameSite=Lax',
+    `SameSite=${sameSiteValue}`,
   ];
-  if (secure) parts.push('Secure');
+  if (mustBeSecure) parts.push('Secure');
   return parts.join('; ');
 }
 
@@ -346,6 +355,7 @@ export function createApp({
   adminResetToken = process.env.ADMIN_RESET_TOKEN,
   adminUsername = process.env.ADMIN_USERNAME || 'harel',
   sessionCookieName = process.env.SESSION_COOKIE_NAME || 'shadowdog_session',
+  sessionCookieSameSite = process.env.SESSION_COOKIE_SAMESITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax'),
   rateLimitStore = String(process.env.RATE_LIMIT_STORE || 'memory').trim().toLowerCase(),
   corsOrigins = process.env.CORS_ORIGINS || '',
   scoreRateLimitMax = parsePositiveInt(process.env.SCORE_RATE_LIMIT_MAX, 30),
@@ -538,7 +548,7 @@ export function createApp({
       const userResult = await pool.query(userSql, [trimmedUsername, usernameNorm, passwordHash]);
       const user = userResult.rows[0];
       const token = await issueSession(user.id);
-      const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure);
+      const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure, sessionCookieSameSite);
       res.setHeader('Set-Cookie', cookie);
       return res.status(201).json({ user });
     } catch (err) {
@@ -569,7 +579,7 @@ export function createApp({
       }
       const user = { id: userResult.rows[0].id, username: userResult.rows[0].username };
       const token = await issueSession(user.id);
-      const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure);
+      const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure, sessionCookieSameSite);
       res.setHeader('Set-Cookie', cookie);
       return res.json({ user });
     } catch {
@@ -592,7 +602,7 @@ export function createApp({
       if (token) {
         await pool.query('DELETE FROM user_sessions WHERE token = $1', [token]);
       }
-      const cookie = serializeSessionCookie(sessionCookieName, '', 0, req.secure);
+      const cookie = serializeSessionCookie(sessionCookieName, '', 0, req.secure, sessionCookieSameSite);
       res.setHeader('Set-Cookie', cookie);
       return res.json({ ok: true });
     } catch {
