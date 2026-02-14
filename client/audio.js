@@ -12,6 +12,7 @@ export class GameAudio {
     this.noiseBufferCache = new Map();
     this.bgmTrack = null;
     this.bgmTrackMode = false;
+    this.skipHeavyTrack = this._detectLowDataMode();
   }
 
   ensureStarted() {
@@ -47,6 +48,10 @@ export class GameAudio {
   }
 
   startBgm() {
+    if (this.skipHeavyTrack) {
+      this._startSynthBgm();
+      return;
+    }
     if (this.bgmTrackMode) {
       if (this.bgmTrack && this.bgmTrack.paused) {
         this.bgmTrack.play().catch(() => {});
@@ -187,15 +192,24 @@ export class GameAudio {
 
   _initBgmTrack() {
     if (this.bgmTrack) return;
+    if (this.skipHeavyTrack) return;
     const configured = window.SHADOWDOG_CONFIG?.bgmTrackSrc || "";
     const defaultTrack = "assets/WhatsApp%20Ptt%202026-02-14%20at%2020.46.51.ogg";
     const src = String(configured || defaultTrack).trim();
     if (!src) return;
     const track = new Audio(src);
     track.loop = true;
-    track.preload = "auto";
+    track.preload = "metadata";
     track.volume = 0.35;
     track.muted = this.muted;
     this.bgmTrack = track;
+  }
+
+  _detectLowDataMode() {
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!conn) return false;
+    if (conn.saveData) return true;
+    const type = String(conn.effectiveType || "").toLowerCase();
+    return type === "slow-2g" || type === "2g";
   }
 }

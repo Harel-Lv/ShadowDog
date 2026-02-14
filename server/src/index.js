@@ -30,6 +30,10 @@ function normalizeUsername(username) {
   return typeof username === 'string' ? username.trim().toLowerCase() : '';
 }
 
+function normalizeOrigin(origin) {
+  return typeof origin === 'string' ? origin.trim().replace(/\/+$/, '') : '';
+}
+
 function validateSignupPayload(body) {
   const { username, password } = body || {};
   const trimmedUsername = typeof username === 'string' ? username.trim() : '';
@@ -221,16 +225,18 @@ export function createApp({
 
   const allowedOrigins = `${DEFAULT_CORS_ORIGINS},${corsOrigins}`
     .split(',')
-    .map(origin => origin.trim())
+    .map(normalizeOrigin)
     .filter(Boolean);
   const allowedOriginsSet = new Set(allowedOrigins);
+  const allowAnyOrigin = allowedOriginsSet.has('*');
 
   const app = express();
   app.set('trust proxy', trustProxy);
   app.use(cors({
     origin(origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOriginsSet.has(origin)) return callback(null, true);
+      const normalized = normalizeOrigin(origin);
+      if (allowAnyOrigin || allowedOriginsSet.has(normalized)) return callback(null, true);
       return callback(null, false);
     },
   }));
