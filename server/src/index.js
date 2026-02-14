@@ -76,6 +76,62 @@ function createSessionToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+async function ensureSchema(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL,
+      username_norm TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scores (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      name TEXT NOT NULL,
+      score INTEGER NOT NULL,
+      difficulty TEXT NOT NULL CHECK (difficulty IN ('easy', 'normal', 'hard')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query('ALTER TABLE scores ADD COLUMN IF NOT EXISTS user_id INTEGER');
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'scores_user_id_fkey'
+          AND conrelid = 'scores'::regclass
+      ) THEN
+        ALTER TABLE scores
+          ADD CONSTRAINT scores_user_id_fkey
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+      END IF;
+    END
+    $$;
+  `);
+  await pool.query(`
+    ALTER TABLE user_sessions
+      ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
+  `);
+  await pool.query('DROP INDEX IF EXISTS scores_name_difficulty_idx');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS scores_user_difficulty_idx ON scores (user_id, difficulty)');
+  await pool.query('CREATE INDEX IF NOT EXISTS scores_difficulty_score_idx ON scores (difficulty, score DESC)');
+  await pool.query('CREATE INDEX IF NOT EXISTS user_sessions_user_id_idx ON user_sessions (user_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions (expires_at)');
+}
+
 function timingSafeEqualString(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const aBuf = Buffer.from(a, 'utf8');
@@ -361,6 +417,7 @@ async function startServer() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
   });
+  await ensureSchema(pool);
   await pool.query('SELECT 1 AS ok');
   const app = createApp({ pool });
   const port = process.env.PORT || 3001;
