@@ -170,7 +170,14 @@ class FakePool {
       };
     }
 
-    if (normalizedSql.includes('FROM users u LEFT JOIN game_sessions gs ON gs.user_id = u.id LEFT JOIN scores s ON s.user_id = u.id')) {
+    if (
+      normalizedSql.includes('FROM users u') &&
+      normalizedSql.includes('AS total_play_time_ms') &&
+      normalizedSql.includes('AS games_played') &&
+      normalizedSql.includes('AS games_won') &&
+      normalizedSql.includes('AS best_score') &&
+      normalizedSql.includes('LIMIT $1')
+    ) {
       const limit = params[0] ?? 100;
       const rows = this.users.map((u) => {
         const sessions = this.gameSessions.filter(s => s.user_id === u.id);

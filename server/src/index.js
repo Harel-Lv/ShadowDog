@@ -544,35 +544,47 @@ export function createApp({
           u.id,
           u.username,
           u.created_at,
-          COALESCE(
-            SUM(
-              CASE
-                WHEN gs.duration_ms IS NOT NULL THEN gs.duration_ms
-                WHEN gs.ended_at IS NOT NULL THEN GREATEST(
-                  0,
-                  FLOOR(EXTRACT(EPOCH FROM (gs.ended_at - gs.started_at)) * 1000)
-                )::int
-                ELSE 0
-              END
-            ),
-            0
-          )::bigint AS total_play_time_ms,
-          COALESCE(
-            SUM(
-              CASE
-                WHEN gs.ended_at IS NOT NULL OR gs.duration_ms IS NOT NULL THEN 1
-                ELSE 0
-              END
-            ),
-            0
-          )::int AS games_played,
-          COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
-          MAX(gs.ended_at) AS last_played_at,
-          MAX(s.score)::int AS best_score
+          COALESCE(gs_agg.total_play_time_ms, 0)::bigint AS total_play_time_ms,
+          COALESCE(gs_agg.games_played, 0)::int AS games_played,
+          COALESCE(gs_agg.games_won, 0)::int AS games_won,
+          gs_agg.last_played_at,
+          s_agg.best_score
         FROM users u
-        LEFT JOIN game_sessions gs ON gs.user_id = u.id
-        LEFT JOIN scores s ON s.user_id = u.id
-        GROUP BY u.id, u.username, u.created_at
+        LEFT JOIN (
+          SELECT
+            user_id,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN duration_ms IS NOT NULL THEN duration_ms
+                  WHEN ended_at IS NOT NULL THEN GREATEST(
+                    0,
+                    FLOOR(EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000)
+                  )::int
+                  ELSE 0
+                END
+              ),
+              0
+            )::bigint AS total_play_time_ms,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN ended_at IS NOT NULL OR duration_ms IS NOT NULL THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int AS games_played,
+            COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
+            MAX(ended_at) AS last_played_at
+          FROM game_sessions
+          GROUP BY user_id
+        ) gs_agg ON gs_agg.user_id = u.id
+        LEFT JOIN (
+          SELECT user_id, MAX(score)::int AS best_score
+          FROM scores
+          GROUP BY user_id
+        ) s_agg ON s_agg.user_id = u.id
         ORDER BY u.username_norm ASC, u.created_at DESC
         LIMIT $1
       `;
@@ -626,35 +638,47 @@ export function createApp({
           u.id,
           u.username,
           u.created_at,
-          COALESCE(
-            SUM(
-              CASE
-                WHEN gs.duration_ms IS NOT NULL THEN gs.duration_ms
-                WHEN gs.ended_at IS NOT NULL THEN GREATEST(
-                  0,
-                  FLOOR(EXTRACT(EPOCH FROM (gs.ended_at - gs.started_at)) * 1000)
-                )::int
-                ELSE 0
-              END
-            ),
-            0
-          )::bigint AS total_play_time_ms,
-          COALESCE(
-            SUM(
-              CASE
-                WHEN gs.ended_at IS NOT NULL OR gs.duration_ms IS NOT NULL THEN 1
-                ELSE 0
-              END
-            ),
-            0
-          )::int AS games_played,
-          COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
-          MAX(gs.ended_at) AS last_played_at,
-          MAX(s.score)::int AS best_score
+          COALESCE(gs_agg.total_play_time_ms, 0)::bigint AS total_play_time_ms,
+          COALESCE(gs_agg.games_played, 0)::int AS games_played,
+          COALESCE(gs_agg.games_won, 0)::int AS games_won,
+          gs_agg.last_played_at,
+          s_agg.best_score
         FROM users u
-        LEFT JOIN game_sessions gs ON gs.user_id = u.id
-        LEFT JOIN scores s ON s.user_id = u.id
-        GROUP BY u.id, u.username, u.created_at
+        LEFT JOIN (
+          SELECT
+            user_id,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN duration_ms IS NOT NULL THEN duration_ms
+                  WHEN ended_at IS NOT NULL THEN GREATEST(
+                    0,
+                    FLOOR(EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000)
+                  )::int
+                  ELSE 0
+                END
+              ),
+              0
+            )::bigint AS total_play_time_ms,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN ended_at IS NOT NULL OR duration_ms IS NOT NULL THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int AS games_played,
+            COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
+            MAX(ended_at) AS last_played_at
+          FROM game_sessions
+          GROUP BY user_id
+        ) gs_agg ON gs_agg.user_id = u.id
+        LEFT JOIN (
+          SELECT user_id, MAX(score)::int AS best_score
+          FROM scores
+          GROUP BY user_id
+        ) s_agg ON s_agg.user_id = u.id
         ORDER BY u.username_norm ASC, u.created_at DESC
         LIMIT $1
       `;
