@@ -3,6 +3,7 @@ import { InputHandler } from "./input.js";
 import { BackGround } from "./BackGround.js";
 import { FlyingEnemy, ClimbingEnemy , GroundEnemy } from "./enemies/enemies.js";
 import { Score } from "./score.js";
+import { GameAudio } from "./audio.js";
 
 
 
@@ -40,6 +41,7 @@ window.addEventListener('load', () => {
         const logoutButton = document.getElementById('logoutButton');
         const authStatus = document.getElementById('authStatus');
         const authStatusTop = document.getElementById('authStatusTop');
+        const audioToggleButton = document.getElementById('audioToggleButton');
         const toast = document.getElementById('toast');
         const mainMenu = document.getElementById('mainMenu');
         const preGameScreen = document.getElementById('preGameScreen');
@@ -66,12 +68,15 @@ window.addEventListener('load', () => {
         let playerName = 'Player';
         const AUTH_TOKEN_KEY = 'shadowdog_auth_token';
         const AUTH_USER_KEY = 'shadowdog_auth_user';
+        const AUDIO_MUTED_KEY = 'shadowdog_audio_muted';
         const previousLocalToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
         const previousLocalUser = localStorage.getItem(AUTH_USER_KEY) || '';
+        const savedAudioMuted = localStorage.getItem(AUDIO_MUTED_KEY) === '1';
         let authToken = sessionStorage.getItem(AUTH_TOKEN_KEY) || previousLocalToken;
         let currentUser = sessionStorage.getItem(AUTH_USER_KEY) || previousLocalUser;
         let authMode = 'login';
         let toastTimer = null;
+        const audio = new GameAudio({ muted: savedAudioMuted });
 
         const configuredApiBase = window.API_BASE || runtimeConfig.apiBase || '';
         const localhostFallback = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -123,6 +128,11 @@ window.addEventListener('load', () => {
                 logoutButton.style.display = 'none';
             }
             updateAdminResetVisibility();
+        }
+
+        function updateAudioToggleLabel() {
+            if (!audioToggleButton) return;
+            audioToggleButton.textContent = audio.muted ? 'Sound: Off' : 'Sound: On';
         }
 
         function userCanSeeAdminReset() {
@@ -287,6 +297,8 @@ window.addEventListener('load', () => {
                 this.paused = false; 
                 this.hitFreezeTimer = 0;
                 this.invulnTimer = 0;
+                this.endSoundPlayed = false;
+                this.audio = audio;
             }
 
             update(deltaTime) {
@@ -390,6 +402,10 @@ window.addEventListener('load', () => {
                 game.update(deltaTime);
             }
             if (game.gameOver) {
+                if (!game.endSoundPlayed) {
+                    game.endSoundPlayed = true;
+                    audio.onGameEnd(game.distance >= game.targetDistance);
+                }
                 if (!game.scoreSaveAttempted && game.distance >= game.targetDistance) {
                     game.scoreSaveAttempted = true;
                     saveScore(game).then((saved) => {
@@ -412,6 +428,16 @@ window.addEventListener('load', () => {
          });
 
         setAuthState(authToken, currentUser);
+        updateAudioToggleLabel();
+
+        if (audioToggleButton) {
+            audioToggleButton.addEventListener('click', () => {
+                audio.ensureStarted();
+                const muted = audio.toggleMuted();
+                localStorage.setItem(AUDIO_MUTED_KEY, muted ? '1' : '0');
+                updateAudioToggleLabel();
+            });
+        }
 
         openSignupButton.addEventListener('click', () => openAuthModal('signup'));
         openLoginButton.addEventListener('click', () => openAuthModal('login'));
@@ -468,6 +494,7 @@ window.addEventListener('load', () => {
 
          document.getElementById('startButton').addEventListener('click', () => {
          if (gameStarted) return;
+         audio.ensureStarted();
          mainMenu.style.display = 'none';
          preGameScreen.style.display = 'flex';
          loadPlayerSettings();
@@ -483,6 +510,8 @@ window.addEventListener('load', () => {
             preGameScreen.style.display = 'none';
             canvas.style.display = 'block';
             game = new Game(canvas.width, canvas.height);// Initialize lastTime to 0
+            audio.ensureStarted();
+            audio.startBgm();
             applyDifficultySettings(game);
             game.player.currentState = game.player.states[0];
             game.player.currentState.enter();

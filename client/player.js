@@ -139,6 +139,7 @@ export class Player {
         enemy.markForDeletion = true;
         this.game.collision.push(new Collision(this.game, enemy.x + enemy.width * 0.5, enemy.y + enemy.height * 0.5));
         this.game.score++;
+        this.game.audio?.playEnemyDown();
       } else {
         if (this.game.invulnTimer > 0) {
           enemy.markForDeletion = true;
@@ -147,6 +148,7 @@ export class Player {
         enemy.markForDeletion = true;
         this.game.collision.push(new Collision(this.game, enemy.x + enemy.width * 0.5, enemy.y + enemy.height * 0.5));
         this.setState(6, 0);
+        this.game.audio?.playHit();
         this.game.lives--;
         if (this.game.lives <= 0) {
           this.game.gameOver = true;

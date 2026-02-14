@@ -78,6 +78,7 @@ export class Jumping extends State {
 // Set the frame for jumping state
         this.game.player.frameX = 0; // Reset horizontal frame index for jumping state
         if (this.game.player.onGround()) this.game.player.vy = this.game.player.jumpVelocity; // Jumping effect
+        this.game.audio?.playJump();
 
         this.game.player.frameY = 1;
         this.game.player.maxFrame = 6; // Set the maximum frame for jumping state
