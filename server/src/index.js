@@ -494,7 +494,21 @@ export function createApp({
         SELECT
           (SELECT COUNT(*)::int FROM users) AS total_users,
           (SELECT COUNT(*)::int FROM game_sessions) AS total_games,
-          (SELECT COALESCE(SUM(duration_ms), 0)::bigint FROM game_sessions) AS total_play_time_ms,
+          (
+            SELECT COALESCE(
+              SUM(
+                COALESCE(
+                  duration_ms,
+                  GREATEST(
+                    0,
+                    FLOOR(EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at)) * 1000)
+                  )::int
+                )
+              ),
+              0
+            )::bigint
+            FROM game_sessions
+          ) AS total_play_time_ms,
           (SELECT COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int FROM game_sessions) AS total_wins
       `;
       const result = await pool.query(sql);
@@ -518,7 +532,18 @@ export function createApp({
           u.id,
           u.username,
           u.created_at,
-          COALESCE(SUM(gs.duration_ms), 0)::bigint AS total_play_time_ms,
+          COALESCE(
+            SUM(
+              COALESCE(
+                gs.duration_ms,
+                GREATEST(
+                  0,
+                  FLOOR(EXTRACT(EPOCH FROM (COALESCE(gs.ended_at, NOW()) - gs.started_at)) * 1000)
+                )::int
+              )
+            ),
+            0
+          )::bigint AS total_play_time_ms,
           COALESCE(COUNT(gs.id), 0)::int AS games_played,
           COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
           MAX(gs.ended_at) AS last_played_at,
@@ -546,7 +571,21 @@ export function createApp({
         SELECT
           (SELECT COUNT(*)::int FROM users) AS total_users,
           (SELECT COUNT(*)::int FROM game_sessions) AS total_games,
-          (SELECT COALESCE(SUM(duration_ms), 0)::bigint FROM game_sessions) AS total_play_time_ms,
+          (
+            SELECT COALESCE(
+              SUM(
+                COALESCE(
+                  duration_ms,
+                  GREATEST(
+                    0,
+                    FLOOR(EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at)) * 1000)
+                  )::int
+                )
+              ),
+              0
+            )::bigint
+            FROM game_sessions
+          ) AS total_play_time_ms,
           (SELECT COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int FROM game_sessions) AS total_wins
       `;
       const usersSql = `
@@ -554,7 +593,18 @@ export function createApp({
           u.id,
           u.username,
           u.created_at,
-          COALESCE(SUM(gs.duration_ms), 0)::bigint AS total_play_time_ms,
+          COALESCE(
+            SUM(
+              COALESCE(
+                gs.duration_ms,
+                GREATEST(
+                  0,
+                  FLOOR(EXTRACT(EPOCH FROM (COALESCE(gs.ended_at, NOW()) - gs.started_at)) * 1000)
+                )::int
+              )
+            ),
+            0
+          )::bigint AS total_play_time_ms,
           COALESCE(COUNT(gs.id), 0)::int AS games_played,
           COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
           MAX(gs.ended_at) AS last_played_at,
