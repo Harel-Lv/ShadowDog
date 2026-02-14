@@ -303,6 +303,7 @@ function createPostgresRateLimiter({
   max,
   windowMs,
   keyFn,
+  fallbackMiddleware = null,
   errorBody = { error: 'Too many requests' },
 }) {
   let lastCleanupAt = 0;
@@ -345,7 +346,10 @@ function createPostgresRateLimiter({
       }
       return next();
     } catch {
-      return res.status(503).json({ error: 'Rate limiter unavailable' });
+      if (typeof fallbackMiddleware === 'function') {
+        return fallbackMiddleware(req, res, next);
+      }
+      return next();
     }
   };
 }
@@ -414,7 +418,14 @@ export function createApp({
 
   const createRateLimiter = (config) => {
     if (rateLimitStore === 'database') {
-      return createPostgresRateLimiter({ pool, ...config });
+      const fallbackMiddleware = createInMemoryRateLimiter({
+        max: config.max,
+        windowMs: config.windowMs,
+        keyFn: config.keyFn,
+        maxEntries: rateLimiterMaxEntries,
+        errorBody: config.errorBody,
+      });
+      return createPostgresRateLimiter({ pool, ...config, fallbackMiddleware });
     }
     return createInMemoryRateLimiter({ ...config, maxEntries: rateLimiterMaxEntries });
   };

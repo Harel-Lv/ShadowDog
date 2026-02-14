@@ -297,12 +297,15 @@ window.addEventListener('load', () => {
                 const res = await apiFetch('/auth/me');
                 if (!res.ok) {
                     setAuthState('', '');
-                    return;
+                    return '';
                 }
                 const data = await res.json().catch(() => ({}));
-                setAuthState('', data?.user?.username || '');
+                const username = data?.user?.username || '';
+                setAuthState('', username);
+                return username;
             } catch {
                 setAuthState('', '');
+                return '';
             }
         }
 
@@ -861,8 +864,11 @@ window.addEventListener('load', () => {
             }
             try {
                 const path = authMode === 'signup' ? '/auth/signup' : '/auth/login';
-                const data = await authRequest(path, { username, password });
-                setAuthState('', data.user?.username || username);
+                await authRequest(path, { username, password });
+                const hydratedUser = await hydrateAuthFromServer();
+                if (!hydratedUser) {
+                    throw new Error('Login failed: browser blocked session cookie');
+                }
                 closeAuthModal();
             } catch (err) {
                 authStatus.textContent = err.message;
