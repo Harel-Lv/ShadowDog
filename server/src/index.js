@@ -746,58 +746,6 @@ export function createApp({
     }
   });
 
-  app.get('/admin/traffic', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
-    try {
-      const parsedDays = Number.parseInt(req.query.days || '7', 10);
-      const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 1), 30) : 7;
-      const daysSql = `
-        WITH day_buckets AS (
-          SELECT generate_series(
-            (CURRENT_DATE - (($1::int - 1) * INTERVAL '1 day'))::date,
-            CURRENT_DATE::date,
-            INTERVAL '1 day'
-          ) AS day_start
-        )
-        SELECT
-          db.day_start::date AS day,
-          COUNT(gs.*)::int AS sessions,
-          COUNT(DISTINCT gs.user_id)::int AS users
-        FROM day_buckets db
-        LEFT JOIN game_sessions gs
-          ON gs.started_at >= db.day_start
-         AND gs.started_at < (db.day_start + INTERVAL '1 day')
-        GROUP BY db.day_start
-        ORDER BY db.day_start ASC
-      `;
-      const hoursSql = `
-        WITH hour_buckets AS (
-          SELECT generate_series(0, 23) AS hour_of_day
-        )
-        SELECT
-          hb.hour_of_day::int AS hour,
-          COUNT(gs.*)::int AS sessions,
-          COUNT(DISTINCT gs.user_id)::int AS users
-        FROM hour_buckets hb
-        LEFT JOIN game_sessions gs
-          ON EXTRACT(HOUR FROM gs.started_at)::int = hb.hour_of_day
-         AND gs.started_at >= (NOW() - ($1::int * INTERVAL '1 day'))
-        GROUP BY hb.hour_of_day
-        ORDER BY hb.hour_of_day ASC
-      `;
-      const [daysResult, hoursResult] = await Promise.all([
-        pool.query(daysSql, [days]),
-        pool.query(hoursSql, [days]),
-      ]);
-      return res.json({
-        days,
-        by_day: daysResult.rows || [],
-        by_hour: hoursResult.rows || [],
-      });
-    } catch {
-      return res.status(500).json({ error: 'Failed to fetch traffic analytics' });
-    }
-  });
-
   app.delete('/scores', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
     try {
       await pool.query('DELETE FROM scores');

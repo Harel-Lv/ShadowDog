@@ -26,8 +26,6 @@ window.addEventListener('load', () => {
         const scoresListHard = document.getElementById('scoresListHard');
         const adminScreen = document.getElementById('adminScreen');
         const adminOverview = document.getElementById('adminOverview');
-        const adminTrafficDays = document.getElementById('adminTrafficDays');
-        const adminTrafficHours = document.getElementById('adminTrafficHours');
         const adminUsersBody = document.getElementById('adminUsersBody');
         const adminBackButton = document.getElementById('adminBackButton');
         const resetStatsButton = document.getElementById('resetStatsButton');
@@ -348,44 +346,6 @@ window.addEventListener('load', () => {
             return `${seconds}s`;
         }
 
-        function formatDayLabel(dateValue) {
-            const date = new Date(dateValue);
-            if (Number.isNaN(date.getTime())) return String(dateValue || '-');
-            return date.toLocaleDateString(undefined, { weekday: 'short' });
-        }
-
-        function formatHourLabel(hourValue) {
-            const hour = Number(hourValue);
-            if (!Number.isFinite(hour)) return '--:00';
-            return `${String(hour).padStart(2, '0')}:00`;
-        }
-
-        function renderTrafficChart(container, items, labelFormatter) {
-            if (!container) return;
-            const safeItems = Array.isArray(items) ? items : [];
-            if (safeItems.length === 0) {
-                container.innerHTML = '<div class="adminTrafficLabel">No data yet</div>';
-                return;
-            }
-            const maxUsers = Math.max(1, ...safeItems.map((item) => Number(item?.users || 0)));
-            container.innerHTML = '';
-            safeItems.forEach((item) => {
-                const users = Math.max(0, Number(item?.users || 0));
-                const sessions = Math.max(0, Number(item?.sessions || 0));
-                const widthPercent = Math.max(4, Math.round((users / maxUsers) * 100));
-                const row = document.createElement('div');
-                row.className = 'adminTrafficRow';
-                row.innerHTML = `
-                    <span class="adminTrafficLabel">${labelFormatter(item)}</span>
-                    <span class="adminTrafficBarTrack" title="${users} players, ${sessions} sessions">
-                        <span class="adminTrafficBarFill" style="width:${widthPercent}%"></span>
-                    </span>
-                    <span class="adminTrafficValue">${users}</span>
-                `;
-                container.appendChild(row);
-            });
-        }
-
         async function adminFetch(path) {
             if (!authToken) throw new Error('Login as admin first');
             const res = await fetch(apiUrl(path), {
@@ -406,15 +366,10 @@ window.addEventListener('load', () => {
             try {
                 let overview;
                 let users;
-                let traffic = { by_day: [], by_hour: [] };
                 try {
-                    const [dashboard, trafficData] = await Promise.all([
-                        adminFetch('/admin/dashboard?limit=200'),
-                        adminFetch('/admin/traffic?days=7').catch(() => ({ by_day: [], by_hour: [] }))
-                    ]);
+                    const dashboard = await adminFetch('/admin/dashboard?limit=200');
                     overview = dashboard?.overview || {};
                     users = Array.isArray(dashboard?.users) ? dashboard.users : [];
-                    traffic = trafficData || { by_day: [], by_hour: [] };
                 } catch (err) {
                     const message = String(err?.message || '');
                     if (!message.includes('(404)')) throw err;
@@ -424,7 +379,6 @@ window.addEventListener('load', () => {
                     ]);
                     overview = fallbackOverview || {};
                     users = Array.isArray(fallbackUsers) ? fallbackUsers : [];
-                    traffic = await adminFetch('/admin/traffic?days=7').catch(() => ({ by_day: [], by_hour: [] }));
                 }
                 const totalPlay = formatDuration(Number(overview.total_play_time_ms || 0));
                 adminOverview.innerHTML = `
@@ -433,16 +387,6 @@ window.addEventListener('load', () => {
                     <div><strong>Total play time:</strong> ${totalPlay}</div>
                     <div><strong>Total wins:</strong> ${overview.total_wins ?? 0}</div>
                 `;
-                renderTrafficChart(
-                    adminTrafficDays,
-                    Array.isArray(traffic?.by_day) ? traffic.by_day : [],
-                    (row) => formatDayLabel(row?.day)
-                );
-                renderTrafficChart(
-                    adminTrafficHours,
-                    Array.isArray(traffic?.by_hour) ? traffic.by_hour : [],
-                    (row) => formatHourLabel(row?.hour)
-                );
                 adminUsersBody.innerHTML = '';
                 users
                     .slice()
