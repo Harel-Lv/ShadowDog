@@ -23,6 +23,17 @@ CREATE TABLE IF NOT EXISTS scores (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS game_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ,
+  duration_ms INTEGER,
+  did_win BOOLEAN,
+  score INTEGER,
+  difficulty TEXT CHECK (difficulty IN ('easy', 'normal', 'hard'))
+);
+
 ALTER TABLE scores
   ADD COLUMN IF NOT EXISTS user_id INTEGER;
 DO $$
@@ -47,3 +58,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS scores_user_difficulty_idx ON scores (user_id,
 CREATE INDEX IF NOT EXISTS scores_difficulty_score_idx ON scores (difficulty, score DESC);
 CREATE INDEX IF NOT EXISTS user_sessions_user_id_idx ON user_sessions (user_id);
 CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS game_sessions_user_id_idx ON game_sessions (user_id);
+CREATE INDEX IF NOT EXISTS game_sessions_started_at_idx ON game_sessions (started_at);

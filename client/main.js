@@ -22,6 +22,10 @@ window.addEventListener('load', () => {
         const scoresListEasy = document.getElementById('scoresListEasy');
         const scoresListNormal = document.getElementById('scoresListNormal');
         const scoresListHard = document.getElementById('scoresListHard');
+        const adminScreen = document.getElementById('adminScreen');
+        const adminOverview = document.getElementById('adminOverview');
+        const adminUsersBody = document.getElementById('adminUsersBody');
+        const adminBackButton = document.getElementById('adminBackButton');
         const backButton = document.getElementById('backButton');
         const resetScoresButton = document.getElementById('resetScoresButton');
         const runtimeConfig = window.SHADOWDOG_CONFIG || {};
@@ -42,6 +46,7 @@ window.addEventListener('load', () => {
         const authStatus = document.getElementById('authStatus');
         const authStatusTop = document.getElementById('authStatusTop');
         const audioToggleButton = document.getElementById('audioToggleButton');
+        const adminPanelButton = document.getElementById('adminPanelButton');
         const toast = document.getElementById('toast');
         const mainMenu = document.getElementById('mainMenu');
         const preGameScreen = document.getElementById('preGameScreen');
@@ -70,6 +75,7 @@ window.addEventListener('load', () => {
         const AUTH_TOKEN_KEY = 'shadowdog_auth_token';
         const AUTH_USER_KEY = 'shadowdog_auth_user';
         const AUDIO_MUTED_KEY = 'shadowdog_audio_muted';
+        const ADMIN_PANEL_TOKEN_KEY = 'shadowdog_admin_panel_token';
         const previousLocalToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
         const previousLocalUser = localStorage.getItem(AUTH_USER_KEY) || '';
         const savedAudioMuted = localStorage.getItem(AUDIO_MUTED_KEY) === '1';
@@ -77,6 +83,7 @@ window.addEventListener('load', () => {
         let currentUser = sessionStorage.getItem(AUTH_USER_KEY) || previousLocalUser;
         let authMode = 'login';
         let toastTimer = null;
+        let activeGameSessionId = null;
         const audio = new GameAudio({ muted: savedAudioMuted });
 
         const configuredApiBase = window.API_BASE || runtimeConfig.apiBase || '';
@@ -135,6 +142,7 @@ window.addEventListener('load', () => {
             } else {
                 sessionStorage.removeItem(AUTH_TOKEN_KEY);
                 sessionStorage.removeItem(AUTH_USER_KEY);
+                sessionStorage.removeItem(ADMIN_PANEL_TOKEN_KEY);
                 localStorage.removeItem(AUTH_TOKEN_KEY);
                 localStorage.removeItem(AUTH_USER_KEY);
                 authStatus.textContent = 'Guest mode (scores will not be saved)';
@@ -143,7 +151,7 @@ window.addEventListener('load', () => {
                 openLoginButton.style.display = 'inline-block';
                 logoutButton.style.display = 'none';
             }
-            updateAdminResetVisibility();
+            updateAdminToolsVisibility();
         }
 
         function updateAudioToggleLabel() {
@@ -156,9 +164,11 @@ window.addEventListener('load', () => {
             return isAdmin || loggedInAdmin;
         }
 
-        function updateAdminResetVisibility() {
+        function updateAdminToolsVisibility() {
             if (!resetScoresButton) return;
-            resetScoresButton.style.display = userCanSeeAdminReset() ? 'inline-block' : 'none';
+            const visible = userCanSeeAdminReset();
+            resetScoresButton.style.display = visible ? 'inline-block' : 'none';
+            if (adminPanelButton) adminPanelButton.style.display = visible ? 'inline-block' : 'none';
         }
 
         function openAuthModal(mode) {
@@ -191,6 +201,127 @@ window.addEventListener('load', () => {
                 throw new Error(data.error || 'Authentication failed');
             }
             return data;
+        }
+
+        async function startGameSessionTracking() {
+            activeGameSessionId = null;
+            if (!authToken || !currentUser) return;
+            try {
+                const res = await fetch(apiUrl('/analytics/session/start'), {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && Number.isFinite(Number(data.sessionId))) {
+                    activeGameSessionId = Number(data.sessionId);
+                }
+            } catch {
+                // Ignore analytics start failures
+            }
+        }
+
+        async function endGameSessionTracking(gameInstance, didWin) {
+            const sessionId = activeGameSessionId;
+            activeGameSessionId = null;
+            if (!sessionId || !authToken || !currentUser || !gameInstance) return;
+            const durationMs = Math.max(0, Math.round(gameInstance.time || 0));
+            const payload = {
+                sessionId,
+                durationMs,
+                didWin: Boolean(didWin),
+                score: Number(gameInstance.score || 0),
+                difficulty: String(gameInstance.difficulty || 'normal')
+            };
+            try {
+                await fetch(apiUrl('/analytics/session/end'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+            } catch {
+                // Ignore analytics end failures
+            }
+        }
+
+        function formatDuration(ms) {
+            const totalSeconds = Math.max(0, Math.floor((ms || 0) / 1000));
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            if (hours > 0) return `${hours}h ${minutes}m`;
+            if (minutes > 0) return `${minutes}m ${seconds}s`;
+            return `${seconds}s`;
+        }
+
+        function ensureAdminPanelToken() {
+            let token = sessionStorage.getItem(ADMIN_PANEL_TOKEN_KEY) || '';
+            if (token) return token;
+            token = (window.prompt('Admin token required:') || '').trim();
+            if (!token) return '';
+            sessionStorage.setItem(ADMIN_PANEL_TOKEN_KEY, token);
+            return token;
+        }
+
+        async function adminFetch(path) {
+            if (!authToken) throw new Error('Login as admin first');
+            const token = ensureAdminPanelToken();
+            if (!token) throw new Error('Admin token is required');
+            const res = await fetch(apiUrl(path), {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                    'x-admin-token': token
+                }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 403) {
+                sessionStorage.removeItem(ADMIN_PANEL_TOKEN_KEY);
+            }
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed admin request');
+            }
+            return data;
+        }
+
+        async function openAdminPanel() {
+            if (!userCanSeeAdminReset()) return;
+            try {
+                const [overview, users] = await Promise.all([
+                    adminFetch('/admin/overview'),
+                    adminFetch('/admin/users?limit=200')
+                ]);
+                const totalPlay = formatDuration(Number(overview.total_play_time_ms || 0));
+                adminOverview.innerHTML = `
+                    <div><strong>Total users:</strong> ${overview.total_users ?? 0}</div>
+                    <div><strong>Total games:</strong> ${overview.total_games ?? 0}</div>
+                    <div><strong>Total play time:</strong> ${totalPlay}</div>
+                    <div><strong>Total wins:</strong> ${overview.total_wins ?? 0}</div>
+                `;
+                adminUsersBody.innerHTML = '';
+                (Array.isArray(users) ? users : []).forEach((u) => {
+                    const tr = document.createElement('tr');
+                    const registered = u.created_at ? new Date(u.created_at).toLocaleString() : '-';
+                    const lastPlayed = u.last_played_at ? new Date(u.last_played_at).toLocaleString() : '-';
+                    tr.innerHTML = `
+                        <td>${u.username || '-'}</td>
+                        <td>${registered}</td>
+                        <td>${formatDuration(Number(u.total_play_time_ms || 0))}</td>
+                        <td>${u.games_played ?? 0}</td>
+                        <td>${u.games_won ?? 0}</td>
+                        <td>${u.best_score ?? 0}</td>
+                        <td>${lastPlayed}</td>
+                    `;
+                    adminUsersBody.appendChild(tr);
+                });
+                mainMenu.style.display = 'none';
+                scoresScreen.style.display = 'none';
+                if (adminScreen) adminScreen.style.display = 'flex';
+                updateTouchControlsVisibility();
+            } catch (err) {
+                showToast(err.message || 'Failed to open admin panel', 'error');
+            }
         }
 
         async function saveScore(game) {
@@ -314,6 +445,7 @@ window.addEventListener('load', () => {
                 this.hitFreezeTimer = 0;
                 this.invulnTimer = 0;
                 this.endSoundPlayed = false;
+                this.analyticsSent = false;
                 this.audio = audio;
             }
 
@@ -418,6 +550,10 @@ window.addEventListener('load', () => {
                 game.update(deltaTime);
             }
             if (game.gameOver) {
+                if (!game.analyticsSent) {
+                    game.analyticsSent = true;
+                    endGameSessionTracking(game, game.distance >= game.targetDistance);
+                }
                 if (!game.endSoundPlayed) {
                     game.endSoundPlayed = true;
                     audio.onGameEnd(game.distance >= game.targetDistance);
@@ -534,6 +670,7 @@ window.addEventListener('load', () => {
             game.player.currentState.enter();
             game.time = 0;
             lastTime = null;
+            startGameSessionTracking();
             updateTouchControlsVisibility();
             requestAnimationFrame(animate);
         });
@@ -557,8 +694,22 @@ window.addEventListener('load', () => {
             updateTouchControlsVisibility();
         });
 
+        if (adminPanelButton) {
+            adminPanelButton.addEventListener('click', () => {
+                openAdminPanel();
+            });
+        }
+
+        if (adminBackButton) {
+            adminBackButton.addEventListener('click', () => {
+                if (adminScreen) adminScreen.style.display = 'none';
+                mainMenu.style.display = 'flex';
+                updateTouchControlsVisibility();
+            });
+        }
+
         if (resetScoresButton) {
-            updateAdminResetVisibility();
+            updateAdminToolsVisibility();
             resetScoresButton.addEventListener('click', async () => {
                 if (!userCanSeeAdminReset()) return;
                 const adminToken = window.prompt('Admin token required to reset scores:');

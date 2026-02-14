@@ -11,6 +11,7 @@
   <div id="authTopbar" class="authTopbar">
     <span id="authStatusTop" class="authStatusTop">Guest</span>
     <button id="audioToggleButton" type="button" class="btn btn--ghost btn--sm">Sound: On</button>
+    <button id="adminPanelButton" type="button" class="btn btn--ghost btn--sm" style="display: none;">Admin</button>
     <button id="openSignupButton" type="button" class="btn btn--ghost btn--sm">Sign Up</button>
     <button id="openLoginButton" type="button" class="btn btn--primary btn--sm">Login</button>
     <button id="logoutButton" type="button" class="btn btn--ghost btn--sm" style="display: none;">Logout</button>
@@ -81,6 +82,29 @@
     <div class="scoresActions">
       <button id="backButton">Back</button>
       <button id="resetScoresButton" style="display: none;">Reset Scores</button>
+    </div>
+  </div>
+  <div id="adminScreen" style="display: none;">
+    <h2>Admin Dashboard</h2>
+    <div id="adminOverview" class="adminOverview"></div>
+    <div class="adminTableWrap">
+      <table class="adminTable">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Registered</th>
+            <th>Total Play Time</th>
+            <th>Games</th>
+            <th>Wins</th>
+            <th>Best Score</th>
+            <th>Last Played</th>
+          </tr>
+        </thead>
+        <tbody id="adminUsersBody"></tbody>
+      </table>
+    </div>
+    <div class="scoresActions">
+      <button id="adminBackButton">Back</button>
     </div>
   </div>
     <div id="touchControls" class="touchControls" aria-hidden="true">

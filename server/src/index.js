@@ -104,6 +104,18 @@ async function ensureSchema(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS game_sessions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ended_at TIMESTAMPTZ,
+      duration_ms INTEGER,
+      did_win BOOLEAN,
+      score INTEGER,
+      difficulty TEXT CHECK (difficulty IN ('easy', 'normal', 'hard'))
+    )
+  `);
   await pool.query('ALTER TABLE scores ADD COLUMN IF NOT EXISTS user_id INTEGER');
   await pool.query(`
     DO $$
@@ -130,6 +142,8 @@ async function ensureSchema(pool) {
   await pool.query('CREATE INDEX IF NOT EXISTS scores_difficulty_score_idx ON scores (difficulty, score DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS user_sessions_user_id_idx ON user_sessions (user_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions (expires_at)');
+  await pool.query('CREATE INDEX IF NOT EXISTS game_sessions_user_id_idx ON game_sessions (user_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS game_sessions_started_at_idx ON game_sessions (started_at)');
 }
 
 async function hasRequiredSchema(pool) {
@@ -137,11 +151,12 @@ async function hasRequiredSchema(pool) {
     SELECT
       to_regclass('public.users') IS NOT NULL AS users_exists,
       to_regclass('public.user_sessions') IS NOT NULL AS user_sessions_exists,
-      to_regclass('public.scores') IS NOT NULL AS scores_exists
+      to_regclass('public.scores') IS NOT NULL AS scores_exists,
+      to_regclass('public.game_sessions') IS NOT NULL AS game_sessions_exists
   `;
   const result = await pool.query(sql);
   const row = result.rows[0] || {};
-  return Boolean(row.users_exists && row.user_sessions_exists && row.scores_exists);
+  return Boolean(row.users_exists && row.user_sessions_exists && row.scores_exists && row.game_sessions_exists);
 }
 
 function timingSafeEqualString(a, b) {
@@ -292,6 +307,14 @@ export function createApp({
     });
   }
 
+  function requireAdminToken(req, res, next) {
+    const providedToken = req.get('x-admin-token');
+    if (!adminResetToken || !timingSafeEqualString(providedToken || '', adminResetToken)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return next();
+  }
+
   app.get('/health', async (_req, res) => {
     try {
       await pool.query('SELECT 1 AS ok');
@@ -410,11 +433,111 @@ export function createApp({
     }
   });
 
-  app.delete('/scores', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
-    const providedToken = req.get('x-admin-token');
-    if (!adminResetToken || !timingSafeEqualString(providedToken || '', adminResetToken)) {
-      return res.status(403).json({ error: 'Forbidden' });
+  app.post('/analytics/session/start', requireAuth, async (req, res) => {
+    try {
+      const sql = `
+        INSERT INTO game_sessions (user_id, started_at)
+        VALUES ($1, NOW())
+        RETURNING id, started_at
+      `;
+      const result = await pool.query(sql, [req.user.id]);
+      return res.status(201).json(result.rows[0]);
+    } catch {
+      return res.status(500).json({ error: 'Failed to start session' });
     }
+  });
+
+  app.post('/analytics/session/end', requireAuth, async (req, res) => {
+    try {
+      const { sessionId, durationMs, didWin, score, difficulty } = req.body || {};
+      if (!Number.isInteger(sessionId) || sessionId <= 0) {
+        return res.status(400).json({ error: 'Invalid sessionId' });
+      }
+      if (!Number.isInteger(durationMs) || durationMs < 0) {
+        return res.status(400).json({ error: 'Invalid durationMs' });
+      }
+      if (typeof didWin !== 'boolean') {
+        return res.status(400).json({ error: 'Invalid didWin' });
+      }
+      if (!Number.isInteger(score) || score < 0) {
+        return res.status(400).json({ error: 'Invalid score' });
+      }
+      if (!['easy', 'normal', 'hard'].includes(difficulty)) {
+        return res.status(400).json({ error: 'Invalid difficulty' });
+      }
+      const safeDurationMs = Math.min(durationMs, 1000 * 60 * 60 * 6);
+      const sql = `
+        UPDATE game_sessions
+        SET ended_at = NOW(),
+            duration_ms = $3,
+            did_win = $4,
+            score = $5,
+            difficulty = $6
+        WHERE id = $1
+          AND user_id = $2
+          AND ended_at IS NULL
+        RETURNING id
+      `;
+      const result = await pool.query(sql, [sessionId, req.user.id, safeDurationMs, didWin, score, difficulty]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      return res.json({ ok: true });
+    } catch {
+      return res.status(500).json({ error: 'Failed to end session' });
+    }
+  });
+
+  app.get('/admin/overview', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (_req, res) => {
+    try {
+      const sql = `
+        SELECT
+          (SELECT COUNT(*)::int FROM users) AS total_users,
+          (SELECT COUNT(*)::int FROM game_sessions) AS total_games,
+          (SELECT COALESCE(SUM(duration_ms), 0)::bigint FROM game_sessions) AS total_play_time_ms,
+          (SELECT COALESCE(SUM(CASE WHEN did_win THEN 1 ELSE 0 END), 0)::int FROM game_sessions) AS total_wins
+      `;
+      const result = await pool.query(sql);
+      return res.json(result.rows[0] || {
+        total_users: 0,
+        total_games: 0,
+        total_play_time_ms: 0,
+        total_wins: 0,
+      });
+    } catch {
+      return res.status(500).json({ error: 'Failed to fetch overview' });
+    }
+  });
+
+  app.get('/admin/users', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
+    try {
+      const parsedLimit = Number.parseInt(req.query.limit || '100', 10);
+      const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
+      const sql = `
+        SELECT
+          u.id,
+          u.username,
+          u.created_at,
+          COALESCE(SUM(gs.duration_ms), 0)::bigint AS total_play_time_ms,
+          COALESCE(COUNT(gs.id), 0)::int AS games_played,
+          COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
+          MAX(gs.ended_at) AS last_played_at,
+          MAX(s.score)::int AS best_score
+        FROM users u
+        LEFT JOIN game_sessions gs ON gs.user_id = u.id
+        LEFT JOIN scores s ON s.user_id = u.id
+        GROUP BY u.id, u.username, u.created_at
+        ORDER BY u.created_at DESC
+        LIMIT $1
+      `;
+      const result = await pool.query(sql, [limit]);
+      return res.json(result.rows);
+    } catch {
+      return res.status(500).json({ error: 'Failed to fetch users stats' });
+    }
+  });
+
+  app.delete('/scores', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
     try {
       await pool.query('DELETE FROM scores');
       return res.json({ ok: true });
