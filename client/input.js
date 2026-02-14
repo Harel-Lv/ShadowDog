@@ -2,21 +2,38 @@ export class InputHandler {
     constructor(game) {
         this.game = game;
         this.keys = [];
+        this.releaseTimers = new Map();
         const gameplayKeys = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter']);
         const touchControls = document.getElementById('touchControls');
+        const supportsPointerEvents = typeof window.PointerEvent !== 'undefined';
         const isTypingTarget = (target) => {
             if (!target) return false;
             const tagName = typeof target.tagName === 'string' ? target.tagName.toUpperCase() : '';
             return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
         };
         const pressKey = (key) => {
+            const pendingRelease = this.releaseTimers.get(key);
+            if (pendingRelease) {
+                clearTimeout(pendingRelease);
+                this.releaseTimers.delete(key);
+            }
             if (gameplayKeys.has(key) && this.keys.indexOf(key) === -1) {
                 this.keys.push(key);
             }
         };
-        const releaseKey = (key) => {
+        const releaseKey = (key, delayMs = 0) => {
             const index = this.keys.indexOf(key);
-            if (index !== -1) this.keys.splice(index, 1);
+            if (index === -1) return;
+            if (delayMs > 0) {
+                const timer = setTimeout(() => {
+                    const delayedIndex = this.keys.indexOf(key);
+                    if (delayedIndex !== -1) this.keys.splice(delayedIndex, 1);
+                    this.releaseTimers.delete(key);
+                }, delayMs);
+                this.releaseTimers.set(key, timer);
+                return;
+            }
+            this.keys.splice(index, 1);
         };
         window.addEventListener('keydown', e => {
             const typing = isTypingTarget(e.target);
@@ -50,15 +67,19 @@ export class InputHandler {
                 const handleUp = (e) => {
                     if (e.cancelable) e.preventDefault();
                     btn.classList.remove('is-pressed');
-                    releaseKey(key);
+                    const releaseDelay = (key === 'ArrowUp' || key === 'Enter') ? 70 : 0;
+                    releaseKey(key, releaseDelay);
                 };
-                btn.addEventListener('pointerdown', handleDown, { passive: false });
-                btn.addEventListener('pointerup', handleUp, { passive: false });
-                btn.addEventListener('pointercancel', handleUp, { passive: false });
-                btn.addEventListener('pointerleave', handleUp, { passive: false });
-                btn.addEventListener('touchstart', handleDown, { passive: false });
-                btn.addEventListener('touchend', handleUp, { passive: false });
-                btn.addEventListener('touchcancel', handleUp, { passive: false });
+                if (supportsPointerEvents) {
+                    btn.addEventListener('pointerdown', handleDown, { passive: false });
+                    btn.addEventListener('pointerup', handleUp, { passive: false });
+                    btn.addEventListener('pointercancel', handleUp, { passive: false });
+                    btn.addEventListener('pointerleave', handleUp, { passive: false });
+                } else {
+                    btn.addEventListener('touchstart', handleDown, { passive: false });
+                    btn.addEventListener('touchend', handleUp, { passive: false });
+                    btn.addEventListener('touchcancel', handleUp, { passive: false });
+                }
             });
         }
         
