@@ -493,7 +493,18 @@ export function createApp({
       const sql = `
         SELECT
           (SELECT COUNT(*)::int FROM users) AS total_users,
-          (SELECT COUNT(*)::int FROM game_sessions) AS total_games,
+          (
+            SELECT COALESCE(
+              SUM(
+                CASE
+                  WHEN ended_at IS NOT NULL OR duration_ms IS NOT NULL THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int
+            FROM game_sessions
+          ) AS total_games,
           (
             SELECT COALESCE(
               SUM(
@@ -546,7 +557,15 @@ export function createApp({
             ),
             0
           )::bigint AS total_play_time_ms,
-          COALESCE(COUNT(gs.id), 0)::int AS games_played,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN gs.ended_at IS NOT NULL OR gs.duration_ms IS NOT NULL THEN 1
+                ELSE 0
+              END
+            ),
+            0
+          )::int AS games_played,
           COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
           MAX(gs.ended_at) AS last_played_at,
           MAX(s.score)::int AS best_score
@@ -554,7 +573,7 @@ export function createApp({
         LEFT JOIN game_sessions gs ON gs.user_id = u.id
         LEFT JOIN scores s ON s.user_id = u.id
         GROUP BY u.id, u.username, u.created_at
-        ORDER BY u.created_at DESC
+        ORDER BY u.username_norm ASC, u.created_at DESC
         LIMIT $1
       `;
       const result = await pool.query(sql, [limit]);
@@ -572,7 +591,18 @@ export function createApp({
       const overviewSql = `
         SELECT
           (SELECT COUNT(*)::int FROM users) AS total_users,
-          (SELECT COUNT(*)::int FROM game_sessions) AS total_games,
+          (
+            SELECT COALESCE(
+              SUM(
+                CASE
+                  WHEN ended_at IS NOT NULL OR duration_ms IS NOT NULL THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            )::int
+            FROM game_sessions
+          ) AS total_games,
           (
             SELECT COALESCE(
               SUM(
@@ -609,7 +639,15 @@ export function createApp({
             ),
             0
           )::bigint AS total_play_time_ms,
-          COALESCE(COUNT(gs.id), 0)::int AS games_played,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN gs.ended_at IS NOT NULL OR gs.duration_ms IS NOT NULL THEN 1
+                ELSE 0
+              END
+            ),
+            0
+          )::int AS games_played,
           COALESCE(SUM(CASE WHEN gs.did_win THEN 1 ELSE 0 END), 0)::int AS games_won,
           MAX(gs.ended_at) AS last_played_at,
           MAX(s.score)::int AS best_score
@@ -617,7 +655,7 @@ export function createApp({
         LEFT JOIN game_sessions gs ON gs.user_id = u.id
         LEFT JOIN scores s ON s.user_id = u.id
         GROUP BY u.id, u.username, u.created_at
-        ORDER BY u.created_at DESC
+        ORDER BY u.username_norm ASC, u.created_at DESC
         LIMIT $1
       `;
 

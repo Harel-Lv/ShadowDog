@@ -214,8 +214,9 @@ window.addEventListener('load', () => {
                     headers: { 'Authorization': `Bearer ${authToken}` }
                 });
                 const data = await res.json().catch(() => ({}));
-                if (res.ok && Number.isFinite(Number(data.sessionId))) {
-                    activeGameSessionId = Number(data.sessionId);
+                const serverSessionId = data?.sessionId ?? data?.id;
+                if (res.ok && Number.isFinite(Number(serverSessionId))) {
+                    activeGameSessionId = Number(serverSessionId);
                 }
             } catch {
                 // Ignore analytics start failures
@@ -300,7 +301,10 @@ window.addEventListener('load', () => {
                     <div><strong>Total wins:</strong> ${overview.total_wins ?? 0}</div>
                 `;
                 adminUsersBody.innerHTML = '';
-                users.forEach((u) => {
+                users
+                    .slice()
+                    .sort((a, b) => String(a?.username || '').localeCompare(String(b?.username || ''), undefined, { sensitivity: 'base' }))
+                    .forEach((u) => {
                     const tr = document.createElement('tr');
                     const registered = u.created_at ? new Date(u.created_at).toLocaleString() : '-';
                     const lastPlayed = u.last_played_at ? new Date(u.last_played_at).toLocaleString() : '-';
