@@ -45,6 +45,7 @@ window.addEventListener('load', () => {
         const toast = document.getElementById('toast');
         const mainMenu = document.getElementById('mainMenu');
         const preGameScreen = document.getElementById('preGameScreen');
+        const touchControls = document.getElementById('touchControls');
         const confirmStart = document.getElementById('confirmStart');
         const cancelStart = document.getElementById('cancelStart');
         const MAX_GAME_TIME = 60000;
@@ -84,6 +85,21 @@ window.addEventListener('load', () => {
             : 'https://shadowdog-api.onrender.com';
         const API_BASE = String(configuredApiBase || localhostFallback).replace(/\/+$/, '');
         const apiUrl = (path) => `${API_BASE}${path}`;
+        const isTouchDevice = window.matchMedia('(pointer: coarse)').matches ||
+            'ontouchstart' in window ||
+            (navigator.maxTouchPoints || 0) > 0;
+
+        if (isTouchDevice) {
+            document.body.classList.add('touch-device');
+        }
+
+        function updateTouchControlsVisibility() {
+            const active = isTouchDevice && gameStarted && canvas.style.display === 'block';
+            document.body.classList.toggle('game-active', active);
+            if (touchControls) {
+                touchControls.setAttribute('aria-hidden', active ? 'false' : 'true');
+            }
+        }
 
         if (previousLocalToken && !sessionStorage.getItem(AUTH_TOKEN_KEY)) {
             sessionStorage.setItem(AUTH_TOKEN_KEY, previousLocalToken);
@@ -498,6 +514,7 @@ window.addEventListener('load', () => {
          mainMenu.style.display = 'none';
          preGameScreen.style.display = 'flex';
          loadPlayerSettings();
+         updateTouchControlsVisibility();
 });
 
         confirmStart.addEventListener('click', () => {
@@ -517,23 +534,27 @@ window.addEventListener('load', () => {
             game.player.currentState.enter();
             game.time = 0;
             lastTime = null;
+            updateTouchControlsVisibility();
             requestAnimationFrame(animate);
         });
 
         cancelStart.addEventListener('click', () => {
             preGameScreen.style.display = 'none';
             mainMenu.style.display = 'flex';
+            updateTouchControlsVisibility();
         });
 
         scoresButton.addEventListener('click', () => {
             mainMenu.style.display = 'none';
             scoresScreen.style.display = 'flex';
             renderScores();
+            updateTouchControlsVisibility();
         });
 
         backButton.addEventListener('click', () => {
             scoresScreen.style.display = 'none';
             mainMenu.style.display = 'flex';
+            updateTouchControlsVisibility();
         });
 
         if (resetScoresButton) {
@@ -570,4 +591,5 @@ window.addEventListener('load', () => {
                 showToast('Scores reset successfully.', 'success');
             });
         }
+        updateTouchControlsVisibility();
     });

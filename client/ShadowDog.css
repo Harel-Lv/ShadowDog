@@ -507,25 +507,23 @@ body {
   }
 }
 
-@media (hover: none) and (pointer: coarse) {
-  .touchControls {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    z-index: 50;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    pointer-events: none;
-  }
+.touch-device.game-active .touchControls {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 50;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+}
 
-  .touchControls__left,
-  .touchControls__right {
-    display: flex;
-    gap: 10px;
-    pointer-events: auto;
-  }
+.touch-device.game-active .touchControls__left,
+.touch-device.game-active .touchControls__right {
+  display: flex;
+  gap: 10px;
+  pointer-events: auto;
 }
 
 
