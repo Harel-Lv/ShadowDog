@@ -10,8 +10,9 @@ class Layer
         this.image = image;
     }
 update() {
+    const scale = this.game.frameScale || 1;
     if (this.x <= -this.width) this.x = 0;
-    else this.x -= this.game.speed * this.speedModifier;
+    else this.x -= this.game.speed * this.speedModifier * scale;
 }
 draw(context) {
     context.drawImage(this.image, this.x, this.y, this.width, this.height);

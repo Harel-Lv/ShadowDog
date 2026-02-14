@@ -8,8 +8,9 @@ class Enemy {
          this.markForDeletion = false; // Flag to mark the enemy for deletion
     }
     update(deltaTime) {
-       this.x -= this.speedX + this.game.speed; // Move the enemy horizontally
-       this.y += this.speedY; // Move the enemy vertically
+       const scale = this.game.frameScale || 1;
+       this.x -= (this.speedX + this.game.speed) * scale; // Move the enemy horizontally
+       this.y += this.speedY * scale; // Move the enemy vertically
 
          // Handle animation frame updates
          if (this.frameTimer > this.frameInterval) {
@@ -50,8 +51,9 @@ export class FlyingEnemy extends Enemy {
     update(deltaTime) {
         super.update(deltaTime); // Call the parent update method
         // Additional logic for flying enemy can be added here
-        this.angle += this.angleSpeed; // Update angle for flying enemy
-        this.y += Math.sin(this.angle); // Sinusoidal vertical movement
+        const scale = this.game.frameScale || 1;
+        this.angle += this.angleSpeed * scale; // Update angle for flying enemy
+        this.y += Math.sin(this.angle) * scale; // Sinusoidal vertical movement
 
     }
 

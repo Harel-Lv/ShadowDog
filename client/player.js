@@ -50,6 +50,7 @@ export class Player {
 
   update(input, deltaTime) {
     this.checkCollision();
+    const scale = this.game.frameScale || 1;
     const canMove = this.game.hitFreezeTimer <= 0;
     const inputToUse = canMove ? input : [];
 
@@ -60,15 +61,15 @@ export class Player {
       else if (inputToUse.includes("ArrowRight")) this.speed = this.maxSpeed;
       else this.speed = 0;
 
-      this.x += this.speed;
+      this.x += this.speed * scale;
       if (this.x < 0) this.x = 0;
       if (this.x > this.game.width - this.width) this.x = this.game.width - this.width;
     } else {
       this.speed = 0;
     }
 
-    this.y += this.vy;
-    if (!this.onGround()) this.vy += this.weight;
+    this.y += this.vy * scale;
+    if (!this.onGround()) this.vy += this.weight * scale;
     else this.vy = 0;
 
     if (this.frameTimer > this.frameInterval) {

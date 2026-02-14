@@ -436,7 +436,7 @@ window.addEventListener('load', () => {
             const byDifficulty = { easy: [], normal: [], hard: [] };
             const responses = await Promise.all(difficultyKeys.map(async (difficulty) => {
                 try {
-                    const res = await fetch(apiUrl(`/scores?difficulty=${difficulty}&limit=50`));
+                    const res = await fetch(apiUrl(`/scores?difficulty=${difficulty}&limit=5`));
                     if (!res.ok) return { difficulty, data: [] };
                     const data = await res.json();
                     return { difficulty, data: Array.isArray(data) ? data : [] };
@@ -460,7 +460,7 @@ window.addEventListener('load', () => {
                     list.appendChild(li);
                     return;
                 }
-                data.forEach((score) => {
+                data.slice(0, 5).forEach((score) => {
                     const li = document.createElement('li');
                     const name = score.name || 'Player';
                     const when = score.created_at ? ` (${new Date(score.created_at).toLocaleDateString()})` : '';
@@ -532,9 +532,11 @@ window.addEventListener('load', () => {
                 this.endSoundPlayed = false;
                 this.analyticsSent = false;
                 this.audio = audio;
+                this.frameScale = 1;
             }
 
             update(deltaTime) {
+                this.frameScale = Math.max(0, Math.min(3, deltaTime / 16.6667));
                 this.time += deltaTime; // Increment game time
                 this.difficultyTimer += deltaTime;
                 this.distance += (this.speed * deltaTime) / 1000;

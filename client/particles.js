@@ -6,10 +6,11 @@ class Particle {
     }
 
     update() {
+        const scale = this.game.frameScale || 1;
         // Update logic
-        this.x -= this.game.speed + this.speedX;
-        this.y -= this.speedY; // Move the object based on game speed
-        this.size = this.size * 0.9;
+        this.x -= (this.game.speed + this.speedX) * scale;
+        this.y -= this.speedY * scale; // Move the object based on game speed
+        this.size = this.size * Math.pow(0.9, scale);
         if (this.size < 0.5) {
             this.markForDeletion = true; // Mark for deletion if size is too small
         }
@@ -66,8 +67,9 @@ export class Splash extends Particle {
     }
     update() {
         super.update();
-        this.gravity += 0.1; // Increase gravity effect
-        this.y += this.gravity; // Apply gravity to vertical position
+        const scale = this.game.frameScale || 1;
+        this.gravity += 0.1 * scale; // Increase gravity effect
+        this.y += this.gravity * scale; // Apply gravity to vertical position
     }
 
     draw(context) {

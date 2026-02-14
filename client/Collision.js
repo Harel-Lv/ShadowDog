@@ -17,7 +17,8 @@ export class Collision {
         this.frameInterval = 1000 / this.fps; // Interval between frames in milliseconds
     }
     update(deltaTime) {
-        this.x -= this.game.speed;
+        const scale = this.game.frameScale || 1;
+        this.x -= this.game.speed * scale;
         if (this.frameTimer > this.frameInterval) {
             this.frameX++; // Move to the next frame
             this.frameTimer = 0; // Reset timer
