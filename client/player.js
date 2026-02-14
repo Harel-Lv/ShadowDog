@@ -72,6 +72,9 @@ export class Player {
     if (!this.onGround()) this.vy += this.weight * scale;
     else this.vy = 0;
 
+    const groundY = this.game.height - this.height - this.game.groundMargin;
+    if (this.y > groundY) this.y = groundY;
+
     if (this.frameTimer > this.frameInterval) {
       this.frameTimer = 0;
       this.frameX++;
@@ -110,6 +113,8 @@ export class Player {
   }
 
   setState(state, speed) {
+    // Never allow jump state when airborne to avoid jump animation without actual lift.
+    if (state === 2 && !this.onGround()) return;
     this.currentState = this.states[state];
     this.game.speed = this.game.maxSpeed * speed;
     this.currentState.enter();
