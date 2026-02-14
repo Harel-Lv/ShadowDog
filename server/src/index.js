@@ -132,6 +132,18 @@ async function ensureSchema(pool) {
   await pool.query('CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions (expires_at)');
 }
 
+async function hasRequiredSchema(pool) {
+  const sql = `
+    SELECT
+      to_regclass('public.users') IS NOT NULL AS users_exists,
+      to_regclass('public.user_sessions') IS NOT NULL AS user_sessions_exists,
+      to_regclass('public.scores') IS NOT NULL AS scores_exists
+  `;
+  const result = await pool.query(sql);
+  const row = result.rows[0] || {};
+  return Boolean(row.users_exists && row.user_sessions_exists && row.scores_exists);
+}
+
 function timingSafeEqualString(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const aBuf = Buffer.from(a, 'utf8');
@@ -421,6 +433,11 @@ async function startServer() {
   const autoMigrateOnStart = parseBoolean(process.env.AUTO_MIGRATE_ON_START, false);
   if (autoMigrateOnStart) {
     await ensureSchema(pool);
+  } else {
+    const schemaReady = await hasRequiredSchema(pool);
+    if (!schemaReady) {
+      throw new Error('Database schema is missing. Run server/db/schema.sql or set AUTO_MIGRATE_ON_START=true for first boot.');
+    }
   }
   await pool.query('SELECT 1 AS ok');
   const app = createApp({ pool });

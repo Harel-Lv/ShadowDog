@@ -18,15 +18,19 @@ body {
   --auth-accent-b: #00c2a0;
 }
 #canvas1 {
-    border: 5px solid black;
+    border: 5px solid #000;
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-     display: none;
+    width: min(92vw, 500px);
+    height: auto;
+    aspect-ratio: 1 / 1;
+    max-height: 92vh;
+    display: none;
 }
 
-/* רקע כהה עם מעבר הדרגתי */
+/* Main menu backdrop */
 #mainMenu {
   position: absolute;
   top: 0;
@@ -161,8 +165,8 @@ body {
   transform: scale(1.15);
 }
 
-/* כותרת גדולה ומסתורית */
-/* כפתור עם אפקט זוהר */
+/* Main title and button glow */
+/* Primary action hover/glow */
 #startButton {
   background-color: #1f1f1f;
   color: #ffffff;
@@ -193,7 +197,7 @@ body {
 }
 #restartBtn {
   position: absolute;
-  top: 60%; /* קצת מתחת ל-GAME OVER */
+  top: 60%; /* Slightly below GAME OVER text */
   left: 50%;
   transform: translate(-50%, -50%);
   padding: 12px 30px;
@@ -443,6 +447,10 @@ body {
 }
 
 @media (max-width: 768px) {
+  #canvas1 {
+    width: min(96vw, 500px);
+    max-height: 78vh;
+  }
   .authTopbar {
     left: 10px;
     right: 10px;
@@ -454,6 +462,16 @@ body {
     width: 100%;
     text-align: right;
   }
+  .scoresGrid {
+    grid-template-columns: 1fr;
+    width: min(520px, 92vw);
+  }
+  #scoresScreen {
+    justify-content: flex-start;
+    padding: 72px 0 24px;
+    overflow-y: auto;
+  }
 }
+
 
 

@@ -76,7 +76,7 @@ window.addEventListener('load', () => {
         const configuredApiBase = window.API_BASE || runtimeConfig.apiBase || '';
         const localhostFallback = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
             ? 'http://127.0.0.1:3002'
-            : '';
+            : 'https://shadowdog-api.onrender.com';
         const API_BASE = String(configuredApiBase || localhostFallback).replace(/\/+$/, '');
         const apiUrl = (path) => `${API_BASE}${path}`;
 
@@ -221,7 +221,8 @@ window.addEventListener('load', () => {
                 data.forEach((score) => {
                     const li = document.createElement('li');
                     const name = score.name || 'Player';
-                    li.textContent = `${name} - SCORE: ${score.score ?? 0}`;
+                    const when = score.created_at ? ` (${new Date(score.created_at).toLocaleDateString()})` : '';
+                    li.textContent = `${name} - SCORE: ${score.score ?? 0}${when}`;
                     list.appendChild(li);
                 });
             });
@@ -286,8 +287,6 @@ window.addEventListener('load', () => {
                 this.paused = false; 
                 this.hitFreezeTimer = 0;
                 this.invulnTimer = 0;
-                this.hitFreezeDuration = 1000;
-                this.invulnDuration = 1000;
             }
 
             update(deltaTime) {

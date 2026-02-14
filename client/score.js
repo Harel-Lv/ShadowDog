@@ -19,21 +19,27 @@ export class Score {
     }
 
     draw(context) {
-        context.fillStyle = 'black';
+        context.fillStyle = '#f5f7fa';
+        context.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        context.lineWidth = 3;
         context.textAlign = 'left';
         context.font = this.fontSize + 'px ' + this.fontFamily;
 
         context.fillText(`Score: ${this.game.score}`, this.ui.scoreX, this.ui.scoreY);
+        context.strokeText(`Score: ${this.game.score}`, this.ui.scoreX, this.ui.scoreY);
         context.fillText(`Distance: ${Math.floor(this.game.distance)} / ${this.game.targetDistance}`, this.ui.scoreX, this.ui.timeY);
+        context.strokeText(`Distance: ${Math.floor(this.game.distance)} / ${this.game.targetDistance}`, this.ui.scoreX, this.ui.timeY);
         context.textAlign = 'right';
         const remainingSeconds = Math.max(0, Math.floor((this.game.maxtime - this.game.time) / 1000));
         context.fillText(`Time: ${remainingSeconds}`, this.game.width - 20, this.ui.scoreY);
+        context.strokeText(`Time: ${remainingSeconds}`, this.game.width - 20, this.ui.scoreY);
         context.textAlign = 'left';
 
         if (this.game.gameOver) {
             context.textAlign = 'center';
             const message = this.game.distance >= this.game.targetDistance ? 'You Win!' : 'Game Over';
             context.fillText(message, this.game.width / 2, this.game.height / 2);
+            context.strokeText(message, this.game.width / 2, this.game.height / 2);
         }
         if (this.game.paused) {
             context.fillStyle = 'rgba(0, 0, 0, 0.5)'; // Dim background
