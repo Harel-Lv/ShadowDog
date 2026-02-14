@@ -95,6 +95,7 @@ export class ClimbingEnemy extends Enemy {
     }
    draw(context) {
         super.draw(context); // Call the parent draw method
+        if (this.x + this.width < 0 || this.x > this.game.width) return;
         context.beginPath();
         context.moveTo(this.x + this.width / 2, 0);
         context.lineTo(this.x + this.width/2, this.y + 50);

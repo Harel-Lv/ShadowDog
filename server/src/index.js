@@ -113,6 +113,7 @@ function createInMemoryRateLimiter({
 export function createApp({
   pool,
   adminResetToken = process.env.ADMIN_RESET_TOKEN,
+  adminUsername = process.env.ADMIN_USERNAME || '',
   corsOrigins = process.env.CORS_ORIGINS || DEFAULT_CORS_ORIGINS,
   scoreRateLimitMax = parsePositiveInt(process.env.SCORE_RATE_LIMIT_MAX, 30),
   scoreRateLimitWindowMs = parsePositiveInt(process.env.SCORE_RATE_LIMIT_WINDOW_MS, 60000),
@@ -183,7 +184,7 @@ export function createApp({
     try {
       await cleanupExpiredSessions();
       const sql = `
-        SELECT u.id, u.username, us.token
+        SELECT u.id, u.username, u.username_norm, us.token
         FROM user_sessions us
         JOIN users u ON u.id = us.user_id
         WHERE us.token = $1
@@ -201,8 +202,26 @@ export function createApp({
     }
   }
 
-  app.get('/health', (_req, res) => {
-    res.json({ ok: true });
+  async function requireAdmin(req, res, next) {
+    const normalizedAdminUsername = normalizeUsername(adminUsername);
+    if (!normalizedAdminUsername) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return requireAuth(req, res, () => {
+      if (req.user?.username_norm !== normalizedAdminUsername) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      return next();
+    });
+  }
+
+  app.get('/health', async (_req, res) => {
+    try {
+      await pool.query('SELECT 1 AS ok');
+      return res.json({ ok: true, db: true });
+    } catch {
+      return res.status(500).json({ ok: false, db: false });
+    }
   });
 
   app.post('/auth/signup', authRateLimitMiddleware, async (req, res) => {
@@ -314,7 +333,7 @@ export function createApp({
     }
   });
 
-  app.delete('/scores', adminRateLimitMiddleware, async (req, res) => {
+  app.delete('/scores', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
     const providedToken = req.get('x-admin-token');
     if (!adminResetToken || providedToken !== adminResetToken) {
       return res.status(403).json({ error: 'Forbidden' });
@@ -330,10 +349,11 @@ export function createApp({
   return app;
 }
 
-function startServer() {
+async function startServer() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
   });
+  await pool.query('SELECT 1 AS ok');
   const app = createApp({ pool });
   const port = process.env.PORT || 3001;
   app.listen(port, () => {
@@ -342,4 +362,9 @@ function startServer() {
 }
 
 const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isMain) startServer();
+if (isMain) {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err?.message || err);
+    process.exit(1);
+  });
+}

@@ -1,4 +1,4 @@
-import { Sitting, Running ,Jumping, Falling, Rolling, Diving, Hit} from "./PlayerStates.js";
+import { Sitting, Running, Jumping, Falling, Rolling, Diving, Hit } from "./PlayerStates.js";
 import { Collision } from "./Collision.js";
 
 const PLAYER_CONFIG = {
@@ -12,7 +12,7 @@ const PLAYER_CONFIG = {
   staminaDrainRate: 50,
   jumpVelocity: -27,
 };
-// File: Player.js
+
 export class Player {
   constructor(game) {
     this.game = game;
@@ -20,106 +20,138 @@ export class Player {
     this.width = PLAYER_CONFIG.width;
     this.height = PLAYER_CONFIG.height;
     this.x = 0;
-    this.y = this.game.height - this.height - this.game.groundMargin; // Position player above the ground
-    this.vy =0; // Vertical speed
-    this.weight = PLAYER_CONFIG.weight; // Weight for gravity effect
-    this.image = document.getElementById('player'); // 10 pixels above the ground
+    this.y = this.game.height - this.height - this.game.groundMargin;
+    this.vy = 0;
+    this.weight = PLAYER_CONFIG.weight;
+    this.image = document.getElementById("player");
     this.speed = 0;
-    this.frameX = 0; // Horizontal frame index for sprite animation
-    this.frameY = 0; // Vertical frame index for sprite animation
-    this.maxSpeed = PLAYER_CONFIG.maxSpeed; // Maximum speed for horizontal movement
-    this.maxFrame = 5; // Maximum frame for animation
-    this.fps = PLAYER_CONFIG.fps; // Frames per second for animation
-    this.frameInterval = 1000 / this.fps; // Interval between frames in milliseconds
-    this.frameTimer = 0; // Timer to control frame updates
-    this.states = [new Sitting(this.game), new Running(this.game), new Jumping(this.game), new Falling(this.game), new Rolling(this.game),
-    new Diving(this.game),new Hit(this.game)]; // Array of player states
-    this.stamina = PLAYER_CONFIG.staminaMax;            // ערך התחלתי
+    this.frameX = 0;
+    this.frameY = 0;
+    this.maxSpeed = PLAYER_CONFIG.maxSpeed;
+    this.maxFrame = 5;
+    this.fps = PLAYER_CONFIG.fps;
+    this.frameInterval = 1000 / this.fps;
+    this.frameTimer = 0;
+    this.states = [
+      new Sitting(this.game),
+      new Running(this.game),
+      new Jumping(this.game),
+      new Falling(this.game),
+      new Rolling(this.game),
+      new Diving(this.game),
+      new Hit(this.game),
+    ];
+    this.stamina = PLAYER_CONFIG.staminaMax;
     this.maxStamina = PLAYER_CONFIG.staminaMax;
-    this.staminaRecovery = PLAYER_CONFIG.staminaRecovery;     // כמה stamina מתמלאת בשנייה
-    this.staminaDrainRate = PLAYER_CONFIG.staminaDrainRate;    // כמה stamina נרוקן לשנייה בזמן ROLLING
+    this.staminaRecovery = PLAYER_CONFIG.staminaRecovery;
+    this.staminaDrainRate = PLAYER_CONFIG.staminaDrainRate;
+    this.effectCooldowns = {};
   }
 
-    update(input, deltaTime) {
-        this.checkCollision(); // Check for collisions with enemies
-        const canMove = this.game.hitFreezeTimer <= 0;
-        const inputToUse = canMove ? input : [];
-        // Always run state logic; freeze only blocks movement/input
-        this.currentState.handleInput(inputToUse);
-        if (canMove) {
-            if (inputToUse.includes('ArrowLeft')) this.speed = -this.maxSpeed; // Move left
-            else if (inputToUse.includes('ArrowRight')) this.speed = this.maxSpeed; // Move right
-            else this.speed = 0;
-            this.x += this.speed;
-            if (this.x < 0) this.x = 0; // Prevent moving off the left edge
-            if (this.x > this.game.width - this.width) this.x = this.game.width - this.width;
-        } else {
-            this.speed = 0;
-        }
+  update(input, deltaTime) {
+    this.checkCollision();
+    const canMove = this.game.hitFreezeTimer <= 0;
+    const inputToUse = canMove ? input : [];
 
-        // vertical movement
-        this.y += this.vy; // Gravity effect
-        if(!this.onGround())  this.vy += this.weight; // Apply gravity
-        else this.vy = 0; // Reset vertical speed when on the ground
+    this.currentState.handleInput(inputToUse, deltaTime);
 
-        // Animation frame handling
-        if( this.frameTimer > this.frameInterval) {
-            this.frameTimer = 0; // Reset timer
-            this.frameX++; // Move to the next frame
-            if (this.frameX > this.maxFrame) this.frameX = 0; 
-        }
-        else this.frameTimer += deltaTime; // Increment timer by deltaTime
+    if (canMove) {
+      if (inputToUse.includes("ArrowLeft")) this.speed = -this.maxSpeed;
+      else if (inputToUse.includes("ArrowRight")) this.speed = this.maxSpeed;
+      else this.speed = 0;
 
-        if (this.game.hitFreezeTimer <= 0) {
-            // כל עוד לא ROLLING – למלא stamina בהדרגה
-            if (this.currentState !== this.states[4] && this.currentState !== this.states[5]) { // If not rolling
-                this.stamina += this.staminaRecovery * (deltaTime / 1000); // Increment stamina based on deltaTime
-                if (this.stamina > this.maxStamina) this.stamina = this.maxStamina; // Cap stamina at max value
-            } else {
-                // אם ROLLING – להוריד stamina בהדרגה
-                this.stamina -= this.staminaDrainRate * (deltaTime / 1000); // Decrement stamina based on deltaTime
-                if (this.stamina < 0) this.stamina = 0; // Prevent negative stamina
-            }
+      this.x += this.speed;
+      if (this.x < 0) this.x = 0;
+      if (this.x > this.game.width - this.width) this.x = this.game.width - this.width;
+    } else {
+      this.speed = 0;
+    }
+
+    this.y += this.vy;
+    if (!this.onGround()) this.vy += this.weight;
+    else this.vy = 0;
+
+    if (this.frameTimer > this.frameInterval) {
+      this.frameTimer = 0;
+      this.frameX++;
+      if (this.frameX > this.maxFrame) this.frameX = 0;
+    } else {
+      this.frameTimer += deltaTime;
+    }
+
+    if (this.game.hitFreezeTimer <= 0) {
+      if (this.currentState !== this.states[4] && this.currentState !== this.states[5]) {
+        this.stamina += this.staminaRecovery * (deltaTime / 1000);
+        if (this.stamina > this.maxStamina) this.stamina = this.maxStamina;
+      } else {
+        this.stamina -= this.staminaDrainRate * (deltaTime / 1000);
+        if (this.stamina < 0) this.stamina = 0;
+      }
+    }
+  }
+
+  draw(context) {
+    context.drawImage(
+      this.image,
+      this.frameX * this.width,
+      this.frameY * this.height,
+      this.width,
+      this.height,
+      this.x,
+      this.y,
+      this.width,
+      this.height
+    );
+  }
+
+  onGround() {
+    return this.y >= this.game.height - this.height - this.game.groundMargin;
+  }
+
+  setState(state, speed) {
+    this.currentState = this.states[state];
+    this.game.speed = this.game.maxSpeed * speed;
+    this.currentState.enter();
+  }
+
+  shouldEmitEffect(name, intervalMs, deltaTime) {
+    const current = this.effectCooldowns[name] || 0;
+    const remaining = current - deltaTime;
+    if (remaining <= 0) {
+      this.effectCooldowns[name] = intervalMs;
+      return true;
+    }
+    this.effectCooldowns[name] = remaining;
+    return false;
+  }
+
+  checkCollision() {
+    const enemies = this.game.enemies;
+    if (enemies.length === 0) return;
+
+    for (let i = 0; i < enemies.length; i++) {
+      const enemy = enemies[i];
+      if (enemy.markForDeletion) continue;
+      if (enemy.x > this.x + this.width || enemy.x + enemy.width < this.x) continue;
+      if (enemy.y > this.y + this.height || enemy.y + enemy.height < this.y) continue;
+
+      if (this.currentState === this.states[5] || this.currentState === this.states[4]) {
+        enemy.markForDeletion = true;
+        this.game.collision.push(new Collision(this.game, enemy.x + enemy.width * 0.5, enemy.y + enemy.height * 0.5));
+        this.game.score++;
+      } else {
+        if (this.game.invulnTimer > 0) {
+          enemy.markForDeletion = true;
+          continue;
         }
-    }
-    draw(context) {
-       context.drawImage(this.image, this.frameX * this.width, this.frameY * this.height, this.width, this.height, this.x, this.y, this.width, this.height);
-    }
-    onGround() {
-        return this.y >= this.game.height - this.height - this.game.groundMargin; // Check if the player is on the ground
-    }
-    setState(state, speed) {
-        this.currentState = this.states[state];
-        this.game.speed = this.game.maxSpeed * speed;
-        this.currentState.enter();
-    }
-    checkCollision() {
-        this.game.enemies.forEach(enemy => {
-        if (this.x < enemy.x + enemy.width &&
-            this.x + this.width > enemy.x &&
-            this.y < enemy.y + enemy.height &&
-            this.y + this.height > enemy.y) {
-            // Collision detected
-            if (this.currentState === this.states[5] || this.currentState === this.states[4]) {
-                 enemy.markForDeletion = true; // Mark the enemy for deletion
-                 this.game.collision.push(new Collision(this.game, enemy.x + enemy.width * 0.5, enemy.y + enemy.height * 0.5)); // Add collision particle effect
-                 this.game.score++; // Increment score if player is diving
-            }
-            else
-            {
-                if (this.game.invulnTimer > 0) {
-                    enemy.markForDeletion = true;
-                    return;
-                }
-                enemy.markForDeletion = true; // Mark the enemy for deletion
-                this.game.collision.push(new Collision(this.game, enemy.x + enemy.width * 0.5, enemy.y + enemy.height * 0.5)); // Add collision particle effect
-                this.setState(6, 0); // Set player state to hit
-                this.game.lives--; // Decrease player lives
-                if (this.game.lives <= 0) {
-                    this.game.gameOver = true; // Set game over if lives are zero
-                }
-            }
+        enemy.markForDeletion = true;
+        this.game.collision.push(new Collision(this.game, enemy.x + enemy.width * 0.5, enemy.y + enemy.height * 0.5));
+        this.setState(6, 0);
+        this.game.lives--;
+        if (this.game.lives <= 0) {
+          this.game.gameOver = true;
         }
-    });
-}
+      }
+    }
+  }
 }

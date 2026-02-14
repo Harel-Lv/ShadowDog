@@ -21,10 +21,9 @@ export class InputHandler {
             }
         });
         window.addEventListener('keyup', e => {
-            const typing = isTypingTarget(e.target);
-            if (typing) return;
             if (gameplayKeys.has(e.key)) {
-                e.preventDefault();
+                const typing = isTypingTarget(e.target);
+                if (!typing) e.preventDefault();
                 const index = this.keys.indexOf(e.key);
                 if (index !== -1) this.keys.splice(index, 1);
                 

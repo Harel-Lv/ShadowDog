@@ -10,19 +10,25 @@ class FakePool {
     this.sessions = [];
     this.nextScoreId = 1;
     this.nextUserId = 1;
+    this.healthShouldFail = false;
   }
 
   async query(sql, params = []) {
     const normalizedSql = sql.replace(/\s+/g, ' ').trim();
 
-    if (normalizedSql.startsWith('SELECT u.id, u.username, us.token FROM user_sessions us JOIN users u ON u.id = us.user_id WHERE us.token = $1')) {
+    if (normalizedSql.startsWith('SELECT u.id, u.username, u.username_norm, us.token FROM user_sessions us JOIN users u ON u.id = us.user_id WHERE us.token = $1')) {
       const token = params[0];
       const session = this.sessions.find(s => s.token === token);
       if (!session) return { rows: [] };
       if (new Date(session.expires_at).getTime() <= Date.now()) return { rows: [] };
       const user = this.users.find(u => u.id === session.user_id);
       if (!user) return { rows: [] };
-      return { rows: [{ id: user.id, username: user.username, token: session.token }] };
+      return { rows: [{ id: user.id, username: user.username, username_norm: user.username_norm, token: session.token }] };
+    }
+
+    if (normalizedSql === 'SELECT 1 AS ok') {
+      if (this.healthShouldFail) throw new Error('health check failed');
+      return { rows: [{ ok: 1 }] };
     }
 
     if (normalizedSql.startsWith('INSERT INTO users (username, username_norm, password_hash) VALUES ($1, $2, $3) RETURNING id, username')) {
@@ -151,6 +157,7 @@ async function withServer(optionsOrRun, maybeRun) {
   const app = createApp({
     pool,
     adminResetToken: 'test-token',
+    adminUsername: 'admin',
     corsOrigins: 'http://localhost:5500',
     ...options,
   });
@@ -176,6 +183,19 @@ test('signup creates account and returns token', async () => {
     assert.equal(res.status, 201);
     assert.equal(typeof res.body.token, 'string');
     assert.equal(res.body.user.username, 'Player1');
+  });
+});
+
+test('GET /health returns 500 when database is unavailable', async () => {
+  await withServer(async ({ port, pool }) => {
+    pool.healthShouldFail = true;
+    const res = await sendJson({
+      port,
+      method: 'GET',
+      path: '/health',
+    });
+    assert.equal(res.status, 500);
+    assert.deepEqual(res.body, { ok: false, db: false });
   });
 });
 
@@ -404,19 +424,112 @@ test('GET /scores keeps stable ordering on score ties by created_at asc', async 
   });
 });
 
-test('DELETE /scores requires admin token', async () => {
+test('DELETE /scores requires admin authentication', async () => {
   await withServer(async ({ port }) => {
-    const forbidden = await sendJson({ port, method: 'DELETE', path: '/scores' });
+    const res = await sendJson({ port, method: 'DELETE', path: '/scores' });
+    assert.equal(res.status, 401);
+  });
+});
+
+test('DELETE /scores requires admin token even for authenticated admin', async () => {
+  await withServer(async ({ port }) => {
+    const signup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const token = signup.body.token;
+    const forbidden = await sendJson({
+      port,
+      method: 'DELETE',
+      path: '/scores',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     assert.equal(forbidden.status, 403);
+  });
+});
+
+test('DELETE /scores returns 403 for authenticated non-admin user', async () => {
+  await withServer(async ({ port }) => {
+    const signup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'player1', password: 'secret123' },
+    });
+    const token = signup.body.token;
+    const forbidden = await sendJson({
+      port,
+      method: 'DELETE',
+      path: '/scores',
+      headers: { Authorization: `Bearer ${token}`, 'x-admin-token': 'test-token' },
+    });
+    assert.equal(forbidden.status, 403);
+  });
+});
+
+test('DELETE /scores succeeds for authenticated admin with valid token', async () => {
+  await withServer(async ({ port }) => {
+    const signup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const token = signup.body.token;
+
+    const save = await sendJson({
+      port,
+      method: 'POST',
+      path: '/scores',
+      headers: { Authorization: `Bearer ${token}` },
+      body: { score: 99, difficulty: 'easy' },
+    });
+    assert.equal(save.status, 201);
+
+    const reset = await sendJson({
+      port,
+      method: 'DELETE',
+      path: '/scores',
+      headers: { Authorization: `Bearer ${token}`, 'x-admin-token': 'test-token' },
+    });
+    assert.equal(reset.status, 200);
+    assert.deepEqual(reset.body, { ok: true });
+
+    const after = await sendJson({
+      port,
+      method: 'GET',
+      path: '/scores?difficulty=easy&limit=10',
+    });
+    assert.equal(after.status, 200);
+    assert.equal(after.body.length, 0);
   });
 });
 
 test('DELETE /scores returns 429 when admin rate limit exceeded', async () => {
   await withServer({ adminRateLimitMax: 1, adminRateLimitWindowMs: 60000 }, async ({ port }) => {
-    const first = await sendJson({ port, method: 'DELETE', path: '/scores' });
+    const signup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const token = signup.body.token;
+    const first = await sendJson({
+      port,
+      method: 'DELETE',
+      path: '/scores',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     assert.equal(first.status, 403);
 
-    const second = await sendJson({ port, method: 'DELETE', path: '/scores' });
+    const second = await sendJson({
+      port,
+      method: 'DELETE',
+      path: '/scores',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     assert.equal(second.status, 429);
   });
 });

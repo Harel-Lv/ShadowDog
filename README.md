@@ -15,8 +15,10 @@ The game now supports account signup/login with `username + password` (no email)
 To allow score reset (`DELETE /scores`), set an admin token in the server environment:
 
 `ADMIN_RESET_TOKEN=your-secret-token`
+`ADMIN_USERNAME=your-admin-username`
 
-When clicking `Reset Scores` in the client, enter that token when prompted.
+Only an authenticated session of `ADMIN_USERNAME` can reset scores.
+When clicking `Reset Scores` in the client, enter the admin token when prompted.
 
 ## CORS configuration
 
@@ -33,6 +35,12 @@ To show the `Reset Scores` button in the client, set:
 `window.IS_ADMIN = true`
 
 `'true'`, `1`, and `'1'` are also accepted.
+
+For username-based visibility in the client, set:
+
+`window.ADMIN_USERNAME = 'your-admin-username'`
+
+Also make sure the client API base and server port match (for example, `window.API_BASE = 'http://127.0.0.1:3002'` with `PORT=3002`).
 
 ## Automated tests
 
@@ -62,3 +70,24 @@ Optional server env vars:
 - `AUTH_RATE_LIMIT_WINDOW_MS` (default: `60000`)
 - `SESSION_TTL_MS` (default: `2592000000` = 30 days)
 - `TRUST_PROXY` (default: `false`, set to `true` behind a reverse proxy)
+
+## Deploy on Render
+
+This repo includes `render.yaml` for:
+
+- `shadowdog-api` (Node web service)
+- `shadowdog-db` (PostgreSQL)
+- `shadowdog-client` (static site)
+
+Steps:
+
+1. Push repo to GitHub.
+2. In Render, create a new **Blueprint** and select this repo.
+3. After services are created, set these env vars on `shadowdog-api`:
+   - `ADMIN_USERNAME`
+   - `ADMIN_RESET_TOKEN`
+   - `CORS_ORIGINS` (your client URL, e.g. `https://shadowdog-client.onrender.com`)
+4. Run `server/db/schema.sql` on the new Render database.
+5. Update client API URL in `client/game.html`:
+   - set `window.API_BASE` to your API URL (e.g. `https://shadowdog-api.onrender.com`)
+6. Redeploy.

@@ -27,6 +27,9 @@ window.addEventListener('load', () => {
             window.IS_ADMIN === 'true' ||
             window.IS_ADMIN === 1 ||
             window.IS_ADMIN === '1';
+        const adminUsername = typeof window.ADMIN_USERNAME === 'string'
+            ? window.ADMIN_USERNAME.trim().toLowerCase()
+            : '';
         const openSignupButton = document.getElementById('openSignupButton');
         const openLoginButton = document.getElementById('openLoginButton');
         const authUsernameInput = document.getElementById('authUsername');
@@ -53,11 +56,13 @@ window.addEventListener('load', () => {
         const ENEMY_INTERVAL_STEP = 50;
         const SPEED_STEP = 0.2;
         const MAX_SPEED = 8;
+        const MAX_ENEMIES = 14;
+        const MAX_PARTICLES = 280;
         const DEFAULT_TARGET_DISTANCE = 200;
         const DIFFICULTY_SETTINGS = {
-            easy: { targetDistance: 100, enemyMultiplier: 2 },
-            normal: { targetDistance: 200, enemyMultiplier: 1 },
-            hard: { targetDistance: 250, enemyMultiplier: 2 / 3 }
+            easy: { targetDistance: 100, enemyMultiplier: 2, minEnemyInterval: 600 },
+            normal: { targetDistance: 200, enemyMultiplier: 1, minEnemyInterval: 400 },
+            hard: { targetDistance: 250, enemyMultiplier: 2 / 3, minEnemyInterval: 260 }
         };
         let selectedDifficulty = 'normal';
         let playerName = 'Player';
@@ -66,7 +71,7 @@ window.addEventListener('load', () => {
         let authMode = 'login';
         let toastTimer = null;
 
-        const API_BASE = window.API_BASE || 'http://localhost:3001';
+        const API_BASE = window.API_BASE || 'http://127.0.0.1:3002';
 
         function showToast(message, type = 'error') {
             if (!toast) return;
@@ -87,6 +92,8 @@ window.addEventListener('load', () => {
                 localStorage.setItem('shadowdog_auth_user', currentUser);
                 authStatus.textContent = `Logged in as ${currentUser}`;
                 authStatusTop.textContent = currentUser;
+                openSignupButton.style.display = 'none';
+                openLoginButton.style.display = 'none';
                 logoutButton.style.display = 'inline-block';
                 if (currentUser) playerNameInput.value = currentUser;
             } else {
@@ -94,8 +101,20 @@ window.addEventListener('load', () => {
                 localStorage.removeItem('shadowdog_auth_user');
                 authStatus.textContent = 'Guest mode (scores will not be saved)';
                 authStatusTop.textContent = 'Guest';
+                openSignupButton.style.display = 'inline-block';
+                openLoginButton.style.display = 'inline-block';
                 logoutButton.style.display = 'none';
             }
+            updateAdminResetVisibility();
+        }
+
+        function userCanSeeAdminReset() {
+            return isAdmin || (adminUsername && currentUser && currentUser.trim().toLowerCase() === adminUsername);
+        }
+
+        function updateAdminResetVisibility() {
+            if (!resetScoresButton) return;
+            resetScoresButton.style.display = userCanSeeAdminReset() ? 'inline-block' : 'none';
         }
 
         function openAuthModal(mode) {
@@ -148,18 +167,21 @@ window.addEventListener('load', () => {
         }
 
         async function renderScores() {
-            let scores = [];
-            try {
-                const res = await fetch(`${API_BASE}/scores?limit=50`);
-                scores = res.ok ? await res.json() : [];
-            } catch {
-                scores = [];
-            }
-            const byDifficulty = {
-                easy: scores.filter(s => s.difficulty === 'easy'),
-                normal: scores.filter(s => s.difficulty === 'normal'),
-                hard: scores.filter(s => s.difficulty === 'hard')
-            };
+            const difficultyKeys = ['easy', 'normal', 'hard'];
+            const byDifficulty = { easy: [], normal: [], hard: [] };
+            const responses = await Promise.all(difficultyKeys.map(async (difficulty) => {
+                try {
+                    const res = await fetch(`${API_BASE}/scores?difficulty=${difficulty}&limit=50`);
+                    if (!res.ok) return { difficulty, data: [] };
+                    const data = await res.json();
+                    return { difficulty, data: Array.isArray(data) ? data : [] };
+                } catch {
+                    return { difficulty, data: [] };
+                }
+            }));
+            responses.forEach(({ difficulty, data }) => {
+                byDifficulty[difficulty] = data;
+            });
             const lists = [
                 { list: scoresListEasy, data: byDifficulty.easy },
                 { list: scoresListNormal, data: byDifficulty.normal },
@@ -167,24 +189,16 @@ window.addEventListener('load', () => {
             ];
             lists.forEach(({ list, data }) => {
                 list.innerHTML = '';
-                const sorted = data.slice().sort((a, b) => {
-                    const scoreDiff = (b.score ?? 0) - (a.score ?? 0);
-                    if (scoreDiff !== 0) return scoreDiff;
-                    const aTime = Date.parse(a.created_at || '');
-                    const bTime = Date.parse(b.created_at || '');
-                    if (Number.isNaN(aTime) || Number.isNaN(bTime)) return 0;
-                    return aTime - bTime;
-                });
-                if (sorted.length === 0) {
+                if (data.length === 0) {
                     const li = document.createElement('li');
                     li.textContent = 'No scores yet';
                     list.appendChild(li);
                     return;
                 }
-                sorted.forEach((score, index) => {
+                data.forEach((score) => {
                     const li = document.createElement('li');
                     const name = score.name || 'Player';
-                    li.textContent = `${index + 1}. ${name} - SCORE: ${score.score ?? 0}`;
+                    li.textContent = `${name} - SCORE: ${score.score ?? 0}`;
                     list.appendChild(li);
                 });
             });
@@ -206,8 +220,10 @@ window.addEventListener('load', () => {
             const settings = DIFFICULTY_SETTINGS[selectedDifficulty] || DIFFICULTY_SETTINGS.normal;
             gameInstance.targetDistance = settings.targetDistance || DEFAULT_TARGET_DISTANCE;
             gameInstance.enemyInterval = ENEMY_INTERVAL * settings.enemyMultiplier;
-            const scaledMin = BASE_MIN_INTERVAL * settings.enemyMultiplier;
-            gameInstance.minEnemyInterval = Math.min(MAX_MIN_INTERVAL, Math.max(BASE_MIN_INTERVAL, scaledMin));
+            gameInstance.minEnemyInterval = Math.min(
+                MAX_MIN_INTERVAL,
+                Math.max(150, settings.minEnemyInterval || BASE_MIN_INTERVAL)
+            );
             gameInstance.playerName = playerName;
             gameInstance.difficulty = selectedDifficulty;
         }
@@ -230,6 +246,8 @@ window.addEventListener('load', () => {
                 this.collision = []; // Initialize collision detection
                 this.enemies = [];
                 this.particles = [];
+                this.maxEnemies = MAX_ENEMIES;
+                this.maxParticles = MAX_PARTICLES;
                 this.enemyTimer = 0; // Timer for enemy spawning
                 this.enemyInterval = ENEMY_INTERVAL; // Interval for enemy spawning in milliseconds
                 this.minEnemyInterval = MIN_ENEMY_INTERVAL;
@@ -299,6 +317,10 @@ window.addEventListener('load', () => {
                     collision.update(deltaTime);
                     if (collision.markForDeletion) this.collision.splice(i, 1);
                 }
+
+                if (this.particles.length > this.maxParticles) {
+                    this.particles.splice(0, this.particles.length - this.maxParticles);
+                }
             }
             draw(context) {
                 this.background.draw(context);
@@ -316,13 +338,24 @@ window.addEventListener('load', () => {
                 });
             }
             addEnemy() {
-                if (this.speed >0 && Math.random() < 0.5) {
+                if (this.speed <= 0 || this.enemies.length >= this.maxEnemies) return;
+
+                const roll = Math.random();
+                if (roll < 0.45) {
                     this.enemies.push(new GroundEnemy(this));
-                }
-                else if (this.speed > 0) {
+                } else if (roll < 0.8) {
                     this.enemies.push(new ClimbingEnemy(this));
+                } else {
+                    this.enemies.push(new FlyingEnemy(this));
                 }
-                this.enemies.push(new FlyingEnemy(this));
+
+                if (
+                    this.difficulty === 'hard' &&
+                    this.enemies.length < this.maxEnemies &&
+                    Math.random() < 0.2
+                ) {
+                    this.enemies.push(new FlyingEnemy(this));
+                }
             }
     
         }
@@ -347,7 +380,7 @@ window.addEventListener('load', () => {
                         }
                     });
                 }
-                restartBtn.style.display = 'block'; // מציג את כפתור האתחול
+                restartBtn.style.display = 'block'; // Show restart button on game over
             }
 
             game.draw(ctx);
@@ -458,21 +491,30 @@ window.addEventListener('load', () => {
             mainMenu.style.display = 'flex';
         });
 
-        if (isAdmin && resetScoresButton) {
-            resetScoresButton.style.display = 'inline-block';
+        if (resetScoresButton) {
+            updateAdminResetVisibility();
             resetScoresButton.addEventListener('click', async () => {
+                if (!userCanSeeAdminReset()) return;
                 const adminToken = window.prompt('Admin token required to reset scores:');
                 if (!adminToken) return;
+                const headers = {
+                    'x-admin-token': adminToken.trim()
+                };
+                if (authToken) headers.Authorization = `Bearer ${authToken}`;
                 const res = await fetch(`${API_BASE}/scores`, {
                     method: 'DELETE',
-                    headers: { 'x-admin-token': adminToken.trim() }
+                    headers
                 }).catch(() => null);
                 if (!res) {
                     showToast('Network error while resetting scores.', 'error');
                     return;
                 }
+                if (res.status === 401) {
+                    showToast('Login as admin is required.', 'error');
+                    return;
+                }
                 if (res.status === 403) {
-                    showToast('Forbidden: admin token is invalid.', 'error');
+                    showToast('Forbidden: admin token or account is invalid.', 'error');
                     return;
                 }
                 if (!res.ok) {

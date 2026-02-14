@@ -19,7 +19,7 @@
     <div class="authModalCard">
       <h3 id="authModalTitle">Login</h3>
       <input id="authUsername" type="text" maxlength="16" placeholder="Username">
-      <input id="authPassword" type="password" maxlength="64" placeholder="Password">
+      <input id="authPassword" type="password" maxlength="128" placeholder="Password">
       <div class="authModalActions">
         <button id="authSubmitButton" type="button" class="btn btn--primary">Continue</button>
         <button id="authCancelButton" type="button" class="btn btn--ghost">Cancel</button>
@@ -108,6 +108,10 @@
     <img id="heart4" src="assets/tool_image/heart.png">
     <img id="heart5" src="assets/tool_image/heart.png">
 
+    <script>
+      window.API_BASE = window.API_BASE || 'http://127.0.0.1:3002';
+      window.ADMIN_USERNAME = window.ADMIN_USERNAME || 'harel';
+    </script>
     <script type="module" src="main.js"></script>
 
 

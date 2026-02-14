@@ -54,8 +54,10 @@ export class Running extends State {
         this.game.player.maxFrame = 6; // Set the maximum frame for running state
     }
 
-    handleInput(input) {
-        this.game.particles.push(new Dust(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height));
+    handleInput(input, deltaTime) {
+        if (this.game.player.shouldEmitEffect('dust', 40, deltaTime)) {
+            this.game.particles.push(new Dust(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height));
+        }
         if (input.includes('ArrowDown')) {
             this.game.player.setState(States.SITTING, 0);
         } else if (input.includes('ArrowUp')) {
@@ -129,19 +131,26 @@ export class Rolling extends State {
         this.game.player.maxFrame = 6; // Set the maximum frame for falling state
     }
 
-    handleInput(input) {
-        this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height*0.05));
+    handleInput(input, deltaTime) {
+        if (this.game.player.shouldEmitEffect('fire', 50, deltaTime)) {
+            this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height * 0.05));
+        }
+        if (this.game.player.stamina <= 0) {
+            if (this.game.player.onGround()) this.game.player.setState(States.RUNNING, 1);
+            else this.game.player.setState(States.FALLING, 1);
+            return;
+        }
         if (input.includes('ArrowDown') && this.game.player.stamina > 0) {
             this.game.player.setState(States.DIVING, 0);
         } else if (input.includes('ArrowDown')) {
             this.game.player.setState(States.SITTING, 0);
-        } else if ((this.game.player.onGround() && !input.includes('Enter')) || this.game.player.stamina <= 0) {
+        } else if (this.game.player.onGround() && !input.includes('Enter')) {
             this.game.player.setState(States.RUNNING, 1);
-            for (let i = 0; i < 30; i++) {
+            for (let i = 0; i < 16; i++) {
             this.game.particles.unshift(new Splash(this.game, this.game.player.x + this.game.player.width * 0.5, this.game.player.y + this.game.player.height * 0.5));
             }
         }
-        else if ((!this.game.player.onGround() && !input.includes('Enter')) || this.game.player.stamina <= 0) {
+        else if (!this.game.player.onGround() && !input.includes('Enter')) {
             this.game.player.setState(States.FALLING, 1);
         }
         else if (input.includes('ArrowUp') && this.game.player.onGround() && input.includes('Enter')) {
@@ -161,8 +170,10 @@ export class Diving extends State {
         this.game.player.maxFrame = 6; // Set the maximum frame for falling state
     }
 
-    handleInput(input) {
-        this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height*0.05));
+    handleInput(input, deltaTime) {
+        if (this.game.player.shouldEmitEffect('fire', 50, deltaTime)) {
+            this.game.particles.push(new Fire(this.game, this.game.player.x + this.game.player.width * 0.05, this.game.player.y + this.game.player.height * 0.05));
+        }
         if (this.game.player.onGround()) {
             if (input.includes('Enter') && this.game.player.stamina > 0) {
                 this.game.player.setState(States.ROLLING, 2);
