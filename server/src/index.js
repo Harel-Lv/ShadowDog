@@ -497,13 +497,14 @@ export function createApp({
           (
             SELECT COALESCE(
               SUM(
-                COALESCE(
-                  duration_ms,
-                  GREATEST(
+                CASE
+                  WHEN duration_ms IS NOT NULL THEN duration_ms
+                  WHEN ended_at IS NOT NULL THEN GREATEST(
                     0,
-                    FLOOR(EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at)) * 1000)
+                    FLOOR(EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000)
                   )::int
-                )
+                  ELSE 0
+                END
               ),
               0
             )::bigint
@@ -534,13 +535,14 @@ export function createApp({
           u.created_at,
           COALESCE(
             SUM(
-              COALESCE(
-                gs.duration_ms,
-                GREATEST(
+              CASE
+                WHEN gs.duration_ms IS NOT NULL THEN gs.duration_ms
+                WHEN gs.ended_at IS NOT NULL THEN GREATEST(
                   0,
-                  FLOOR(EXTRACT(EPOCH FROM (COALESCE(gs.ended_at, NOW()) - gs.started_at)) * 1000)
+                  FLOOR(EXTRACT(EPOCH FROM (gs.ended_at - gs.started_at)) * 1000)
                 )::int
-              )
+                ELSE 0
+              END
             ),
             0
           )::bigint AS total_play_time_ms,
@@ -574,13 +576,14 @@ export function createApp({
           (
             SELECT COALESCE(
               SUM(
-                COALESCE(
-                  duration_ms,
-                  GREATEST(
+                CASE
+                  WHEN duration_ms IS NOT NULL THEN duration_ms
+                  WHEN ended_at IS NOT NULL THEN GREATEST(
                     0,
-                    FLOOR(EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at)) * 1000)
+                    FLOOR(EXTRACT(EPOCH FROM (ended_at - started_at)) * 1000)
                   )::int
-                )
+                  ELSE 0
+                END
               ),
               0
             )::bigint
@@ -595,13 +598,14 @@ export function createApp({
           u.created_at,
           COALESCE(
             SUM(
-              COALESCE(
-                gs.duration_ms,
-                GREATEST(
+              CASE
+                WHEN gs.duration_ms IS NOT NULL THEN gs.duration_ms
+                WHEN gs.ended_at IS NOT NULL THEN GREATEST(
                   0,
-                  FLOOR(EXTRACT(EPOCH FROM (COALESCE(gs.ended_at, NOW()) - gs.started_at)) * 1000)
+                  FLOOR(EXTRACT(EPOCH FROM (gs.ended_at - gs.started_at)) * 1000)
                 )::int
-              )
+                ELSE 0
+              END
             ),
             0
           )::bigint AS total_play_time_ms,
