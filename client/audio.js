@@ -1,4 +1,4 @@
-const BGM_PATTERN = [110, 123.47, 146.83, 164.81, 146.83, 123.47];
+const BGM_PATTERN = [110, 98, 130.81, 146.83, 110, 164.81, 130.81, 98];
 
 export class GameAudio {
   constructor({ muted = false } = {}) {
@@ -46,7 +46,7 @@ export class GameAudio {
     if (this.bgmTimer) return;
     if (!this.ensureStarted()) return;
     this._playBgmStep();
-    this.bgmTimer = setInterval(() => this._playBgmStep(), 1000);
+    this.bgmTimer = setInterval(() => this._playBgmStep(), 500);
   }
 
   stopBgm() {
@@ -92,8 +92,14 @@ export class GameAudio {
     if (!this.ctx || this.muted) return;
     const note = BGM_PATTERN[this.bgmStepIndex % BGM_PATTERN.length];
     this.bgmStepIndex += 1;
-    this._playTone({ freq: note, duration: 0.5, gain: 0.12, type: "sawtooth", bus: "music" });
-    this._playTone({ freq: note * 2, duration: 0.15, gain: 0.07, type: "triangle", bus: "music", when: 0.08 });
+    const powerFifth = note * 1.5;
+    // Rock-like power chord pulse + bass hit
+    this._playTone({ freq: note, duration: 0.34, gain: 0.14, type: "sawtooth", bus: "music" });
+    this._playTone({ freq: powerFifth, duration: 0.28, gain: 0.1, type: "square", bus: "music", when: 0.01 });
+    this._playTone({ freq: note / 2, duration: 0.2, gain: 0.13, type: "triangle", bus: "music", when: 0.02 });
+    // Light kick/snare feel for momentum
+    this._playTone({ freq: 62, duration: 0.08, gain: 0.12, type: "sine", bus: "music" });
+    this._playNoise({ duration: 0.05, gain: 0.05, bus: "music", when: 0.24 });
   }
 
   _playTone({ freq, duration, gain, type = "sine", bus = "sfx", when = 0 }) {
@@ -114,7 +120,7 @@ export class GameAudio {
     osc.stop(now + duration + 0.03);
   }
 
-  _playNoise({ duration, gain }) {
+  _playNoise({ duration, gain, bus = "sfx", when = 0 }) {
     if (!this.ensureStarted()) return;
     if (this.muted) return;
     const bufferLength = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
@@ -126,11 +132,11 @@ export class GameAudio {
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
     const gainNode = this.ctx.createGain();
-    const now = this.ctx.currentTime;
+    const now = this.ctx.currentTime + when;
     gainNode.gain.setValueAtTime(Math.max(0.001, gain), now);
     gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     source.connect(gainNode);
-    gainNode.connect(this.sfxGain);
+    gainNode.connect(bus === "music" ? this.musicGain : this.sfxGain);
     source.start(now);
     source.stop(now + duration + 0.03);
   }

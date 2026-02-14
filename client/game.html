@@ -83,6 +83,16 @@
       <button id="resetScoresButton" style="display: none;">Reset Scores</button>
     </div>
   </div>
+    <div id="touchControls" class="touchControls" aria-hidden="true">
+      <div class="touchControls__left">
+        <button type="button" class="touchBtn" data-key="ArrowLeft" aria-label="Move left">◀</button>
+        <button type="button" class="touchBtn" data-key="ArrowRight" aria-label="Move right">▶</button>
+      </div>
+      <div class="touchControls__right">
+        <button type="button" class="touchBtn touchBtn--jump" data-key="ArrowUp" aria-label="Jump">Jump</button>
+        <button type="button" class="touchBtn touchBtn--roll" data-key="Enter" aria-label="Roll">Roll</button>
+      </div>
+    </div>
     <canvas id="canvas1"></canvas>
     <img id="player" src="assets/tool_image/player (1).png">
      <button id="restartBtn" style="display: none;">Restart</button>

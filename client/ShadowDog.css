@@ -9,6 +9,7 @@ body {
     radial-gradient(1200px 600px at 20% 10%, rgba(0, 255, 204, 0.12), transparent 60%),
     radial-gradient(800px 500px at 80% 20%, rgba(255, 184, 0, 0.12), transparent 60%),
     linear-gradient(160deg, #0c0f12 0%, #060709 50%, #000000 100%);
+  touch-action: manipulation;
 }
 :root {
   --auth-bg: rgba(7, 10, 13, 0.86);
@@ -28,6 +29,39 @@ body {
     aspect-ratio: 1 / 1;
     max-height: 92vh;
     display: none;
+    touch-action: none;
+}
+
+.touchControls {
+  display: none;
+}
+
+.touchBtn {
+  width: 68px;
+  height: 68px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(14, 18, 22, 0.86);
+  color: #f4f7fa;
+  font-size: 24px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.touchBtn--jump,
+.touchBtn--roll {
+  width: 82px;
+  height: 82px;
+  font-size: 16px;
+}
+
+.touchBtn.is-pressed {
+  transform: translateY(1px) scale(0.97);
+  background: rgba(0, 194, 160, 0.85);
+  color: #0b0f12;
 }
 
 /* Main menu backdrop */
@@ -470,6 +504,27 @@ body {
     justify-content: flex-start;
     padding: 72px 0 24px;
     overflow-y: auto;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .touchControls {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 50;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    pointer-events: none;
+  }
+
+  .touchControls__left,
+  .touchControls__right {
+    display: flex;
+    gap: 10px;
+    pointer-events: auto;
   }
 }
 
