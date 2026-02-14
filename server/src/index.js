@@ -178,7 +178,7 @@ export function createApp({
   pool,
   adminResetToken = process.env.ADMIN_RESET_TOKEN,
   adminUsername = process.env.ADMIN_USERNAME || '',
-  corsOrigins = process.env.CORS_ORIGINS || DEFAULT_CORS_ORIGINS,
+  corsOrigins = process.env.CORS_ORIGINS || '',
   scoreRateLimitMax = parsePositiveInt(process.env.SCORE_RATE_LIMIT_MAX, 30),
   scoreRateLimitWindowMs = parsePositiveInt(process.env.SCORE_RATE_LIMIT_WINDOW_MS, 60000),
   adminRateLimitMax = parsePositiveInt(process.env.ADMIN_RATE_LIMIT_MAX, 5),
@@ -192,17 +192,18 @@ export function createApp({
     throw new Error('A database pool with a query method is required');
   }
 
-  const allowedOrigins = corsOrigins
+  const allowedOrigins = `${DEFAULT_CORS_ORIGINS},${corsOrigins}`
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean);
+  const allowedOriginsSet = new Set(allowedOrigins);
 
   const app = express();
   app.set('trust proxy', trustProxy);
   app.use(cors({
     origin(origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedOriginsSet.has(origin)) return callback(null, true);
       return callback(null, false);
     },
   }));
