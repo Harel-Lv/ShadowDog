@@ -27,6 +27,7 @@ window.addEventListener('load', () => {
         const adminOverview = document.getElementById('adminOverview');
         const adminUsersBody = document.getElementById('adminUsersBody');
         const adminBackButton = document.getElementById('adminBackButton');
+        const resetStatsButton = document.getElementById('resetStatsButton');
         const backButton = document.getElementById('backButton');
         const resetScoresButton = document.getElementById('resetScoresButton');
         const runtimeConfig = window.SHADOWDOG_CONFIG || {};
@@ -167,6 +168,7 @@ window.addEventListener('load', () => {
             if (!resetScoresButton) return;
             const visible = userCanSeeAdminReset();
             resetScoresButton.style.display = visible ? 'inline-block' : 'none';
+            if (resetStatsButton) resetStatsButton.style.display = visible ? 'inline-block' : 'none';
             if (adminPanelButton) adminPanelButton.style.display = visible ? 'inline-block' : 'none';
             if (adminStatsButton) adminStatsButton.style.display = visible ? 'inline-block' : 'none';
         }
@@ -744,6 +746,41 @@ window.addEventListener('load', () => {
                 }
                 renderScores();
                 showToast('Scores reset successfully.', 'success');
+            });
+        }
+
+        if (resetStatsButton) {
+            updateAdminToolsVisibility();
+            resetStatsButton.addEventListener('click', async () => {
+                if (!userCanSeeAdminReset()) return;
+                const adminToken = window.prompt('Admin token required to reset statistics:');
+                if (!adminToken) return;
+                const headers = {
+                    'x-admin-token': adminToken.trim()
+                };
+                if (authToken) headers.Authorization = `Bearer ${authToken}`;
+                const res = await fetch(apiUrl('/admin/statistics'), {
+                    method: 'DELETE',
+                    headers
+                }).catch(() => null);
+                if (!res) {
+                    showToast('Network error while resetting statistics.', 'error');
+                    return;
+                }
+                if (res.status === 401) {
+                    showToast('Login as admin is required.', 'error');
+                    return;
+                }
+                if (res.status === 403) {
+                    showToast('Forbidden: admin token or account is invalid.', 'error');
+                    return;
+                }
+                if (!res.ok) {
+                    showToast('Failed to reset statistics.', 'error');
+                    return;
+                }
+                showToast('Statistics reset successfully.', 'success');
+                openAdminPanel();
             });
         }
         updateTouchControlsVisibility();

@@ -422,7 +422,8 @@ body {
 #confirmStart,
 #cancelStart,
 #backButton,
-#resetScoresButton {
+#resetScoresButton,
+#resetStatsButton {
   background-color: #111417;
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -454,7 +455,8 @@ body {
 #confirmStart:hover,
 #cancelStart:hover,
 #backButton:hover,
-#resetScoresButton:hover {
+#resetScoresButton:hover,
+#resetStatsButton:hover {
   transform: translateY(-2px);
   box-shadow: 0 16px 26px rgba(0, 0, 0, 0.45);
 }

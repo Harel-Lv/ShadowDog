@@ -649,6 +649,15 @@ export function createApp({
     }
   });
 
+  app.delete('/admin/statistics', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (_req, res) => {
+    try {
+      const result = await pool.query('DELETE FROM game_sessions');
+      return res.json({ ok: true, deleted: result.rowCount || 0 });
+    } catch {
+      return res.status(500).json({ error: 'Failed to reset statistics' });
+    }
+  });
+
   return app;
 }
 
