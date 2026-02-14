@@ -24,6 +24,7 @@ window.addEventListener('load', () => {
         const backButton = document.getElementById('backButton');
         const resetScoresButton = document.getElementById('resetScoresButton');
         const runtimeConfig = window.SHADOWDOG_CONFIG || {};
+        const adminUsername = String(runtimeConfig.adminUsername || window.ADMIN_USERNAME || 'harel').trim().toLowerCase();
         const isAdmin = window.IS_ADMIN === true ||
             window.IS_ADMIN === 'true' ||
             window.IS_ADMIN === 1 ||
@@ -42,7 +43,6 @@ window.addEventListener('load', () => {
         const toast = document.getElementById('toast');
         const mainMenu = document.getElementById('mainMenu');
         const preGameScreen = document.getElementById('preGameScreen');
-        const playerNameInput = document.getElementById('playerName');
         const confirmStart = document.getElementById('confirmStart');
         const cancelStart = document.getElementById('cancelStart');
         const MAX_GAME_TIME = 60000;
@@ -111,7 +111,6 @@ window.addEventListener('load', () => {
                 openSignupButton.style.display = 'none';
                 openLoginButton.style.display = 'none';
                 logoutButton.style.display = 'inline-block';
-                if (currentUser) playerNameInput.value = currentUser;
             } else {
                 sessionStorage.removeItem(AUTH_TOKEN_KEY);
                 sessionStorage.removeItem(AUTH_USER_KEY);
@@ -127,7 +126,8 @@ window.addEventListener('load', () => {
         }
 
         function userCanSeeAdminReset() {
-            return isAdmin;
+            const loggedInAdmin = Boolean(currentUser) && currentUser.trim().toLowerCase() === adminUsername;
+            return isAdmin || loggedInAdmin;
         }
 
         function updateAdminResetVisibility() {
@@ -150,11 +150,16 @@ window.addEventListener('load', () => {
         }
 
         async function authRequest(path, payload) {
-            const res = await fetch(apiUrl(path), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            let res;
+            try {
+                res = await fetch(apiUrl(path), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } catch {
+                throw new Error('Network error: cannot reach server');
+            }
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 throw new Error(data.error || 'Authentication failed');
@@ -223,10 +228,7 @@ window.addEventListener('load', () => {
         }
 
         function loadPlayerSettings() {
-            const savedName = localStorage.getItem('shadowdog_player_name');
             const savedDifficulty = localStorage.getItem('shadowdog_difficulty');
-            if (currentUser) playerNameInput.value = currentUser;
-            else if (savedName) playerNameInput.value = savedName;
             if (savedDifficulty && DIFFICULTY_SETTINGS[savedDifficulty]) {
                 selectedDifficulty = savedDifficulty;
                 const radio = preGameScreen.querySelector(`input[name="difficulty"][value="${savedDifficulty}"]`);
@@ -470,16 +472,13 @@ window.addEventListener('load', () => {
          mainMenu.style.display = 'none';
          preGameScreen.style.display = 'flex';
          loadPlayerSettings();
-         playerNameInput.focus();
 });
 
         confirmStart.addEventListener('click', () => {
             if (gameStarted) return;
-            const name = playerNameInput.value.trim();
-            playerName = name.length > 0 ? name : 'Player';
+            playerName = currentUser || 'Player';
             const selected = preGameScreen.querySelector('input[name="difficulty"]:checked');
             selectedDifficulty = selected ? selected.value : 'normal';
-            localStorage.setItem('shadowdog_player_name', playerName);
             localStorage.setItem('shadowdog_difficulty', selectedDifficulty);
             gameStarted = true;
             preGameScreen.style.display = 'none';

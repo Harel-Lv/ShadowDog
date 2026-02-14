@@ -19,13 +19,15 @@ services:
           name: shadowdog-db
           property: connectionString
       - key: ADMIN_USERNAME
-        sync: false
+        value: harel
       - key: ADMIN_RESET_TOKEN
         sync: false
       - key: CORS_ORIGINS
         sync: false
       - key: TRUST_PROXY
         value: "true"
+      - key: AUTO_MIGRATE_ON_START
+        value: "false"
 
   - type: web
     name: shadowdog-client

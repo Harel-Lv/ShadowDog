@@ -3,6 +3,13 @@
     padding: 0;
     box-sizing: border-box;
 }
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 20% 10%, rgba(0, 255, 204, 0.12), transparent 60%),
+    radial-gradient(800px 500px at 80% 20%, rgba(255, 184, 0, 0.12), transparent 60%),
+    linear-gradient(160deg, #0c0f12 0%, #060709 50%, #000000 100%);
+}
 :root {
   --auth-bg: rgba(7, 10, 13, 0.86);
   --auth-border: rgba(255, 255, 255, 0.18);
@@ -64,16 +71,6 @@
   letter-spacing: 1px;
 }
 
-#scoresList {
-  list-style: decimal;
-  padding-left: 24px;
-  margin-bottom: 25px;
-  max-height: 260px;
-  overflow-y: auto;
-  width: 260px;
-  text-align: left;
-}
-
 .scoresGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -110,11 +107,6 @@
   gap: 12px;
 }
 
-#scoresList li {
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
 #preGameScreen {
   position: absolute;
   top: 0;
@@ -145,22 +137,6 @@
   text-transform: uppercase;
   letter-spacing: 1px;
   color: rgba(240, 240, 240, 0.7);
-}
-
-#playerName {
-  width: 100%;
-  max-width: 320px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(15, 18, 22, 0.9);
-  color: #fff;
-  font-size: 16px;
-  outline: none;
-}
-
-#playerName::placeholder {
-  color: rgba(255, 255, 255, 0.45);
 }
 
 .difficultyOptions {

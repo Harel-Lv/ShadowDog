@@ -177,7 +177,7 @@ function createInMemoryRateLimiter({
 export function createApp({
   pool,
   adminResetToken = process.env.ADMIN_RESET_TOKEN,
-  adminUsername = process.env.ADMIN_USERNAME || '',
+  adminUsername = process.env.ADMIN_USERNAME || 'harel',
   corsOrigins = process.env.CORS_ORIGINS || '',
   scoreRateLimitMax = parsePositiveInt(process.env.SCORE_RATE_LIMIT_MAX, 30),
   scoreRateLimitWindowMs = parsePositiveInt(process.env.SCORE_RATE_LIMIT_WINDOW_MS, 60000),
@@ -418,7 +418,10 @@ async function startServer() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
   });
-  await ensureSchema(pool);
+  const autoMigrateOnStart = parseBoolean(process.env.AUTO_MIGRATE_ON_START, false);
+  if (autoMigrateOnStart) {
+    await ensureSchema(pool);
+  }
   await pool.query('SELECT 1 AS ok');
   const app = createApp({ pool });
   const port = process.env.PORT || 3001;

@@ -49,8 +49,6 @@
     <div class="menuCard">
       <div class="menuBadge">READY?</div>
       <h2>Before You Play</h2>
-      <label class="menuLabel" for="playerName">Player Name</label>
-      <input id="playerName" type="text" maxlength="16" placeholder="Enter name">
       <div class="menuLabel">Difficulty</div>
       <div class="difficultyOptions">
         <label><input type="radio" name="difficulty" value="easy"> Easy</label>
@@ -110,7 +108,8 @@
 
     <script>
       window.SHADOWDOG_CONFIG = window.SHADOWDOG_CONFIG || {
-        apiBase: 'https://shadowdog-api.onrender.com'
+        apiBase: 'https://shadowdog-api.onrender.com',
+        adminUsername: 'harel'
       };
       window.API_BASE = window.API_BASE || window.SHADOWDOG_CONFIG.apiBase || '';
     </script>

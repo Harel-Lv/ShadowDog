@@ -19,6 +19,7 @@ To allow score reset (`DELETE /scores`), set an admin token in the server enviro
 
 Only an authenticated session of `ADMIN_USERNAME` can reset scores.
 When clicking `Reset Scores` in the client, enter the admin token when prompted.
+Default admin username is `harel` if `ADMIN_USERNAME` is not set.
 
 ## CORS configuration
 
@@ -66,6 +67,7 @@ Optional server env vars:
 - `AUTH_RATE_LIMIT_WINDOW_MS` (default: `60000`)
 - `SESSION_TTL_MS` (default: `2592000000` = 30 days)
 - `TRUST_PROXY` (default: `false`, set to `true` behind a reverse proxy)
+- `AUTO_MIGRATE_ON_START` (default: `false`; enable only if you want schema bootstrap on startup)
 
 Note: auth token is stored in `sessionStorage` (not `localStorage`) so browser restarts log users out by default.
 
