@@ -790,3 +790,59 @@ test('DELETE /admin/statistics requires admin token and clears sessions', async 
     assert.equal(dashboard.body.overview.total_play_time_ms, 0);
   });
 });
+
+test('admin per-user games and wins count only completed sessions', async () => {
+  await withServer(async ({ port }) => {
+    const adminSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const adminToken = adminSignup.body.token;
+
+    const startedOpen = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/start',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(startedOpen.status, 201);
+
+    const startedClosed = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/start',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(startedClosed.status, 201);
+
+    const ended = await sendJson({
+      port,
+      method: 'POST',
+      path: '/analytics/session/end',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        sessionId: startedClosed.body.id,
+        durationMs: 3000,
+        didWin: true,
+        score: 5,
+        difficulty: 'hard',
+      },
+    });
+    assert.equal(ended.status, 200);
+
+    const users = await sendJson({
+      port,
+      method: 'GET',
+      path: '/admin/users?limit=10',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(users.status, 200);
+    const adminRow = users.body.find((u) => u.username === 'admin');
+    assert.ok(adminRow);
+    assert.equal(adminRow.games_played, 1);
+    assert.equal(adminRow.games_won, 1);
+    assert.equal(adminRow.total_play_time_ms, 3000);
+  });
+});
