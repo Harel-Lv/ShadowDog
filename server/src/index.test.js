@@ -281,7 +281,12 @@ async function withServer(optionsOrRun, maybeRun) {
   }
 }
 
-test('signup creates account and returns token', async () => {
+function latestTokenForUser(pool, userId) {
+  const sessions = pool.sessions.filter((s) => s.user_id === userId);
+  return sessions.length ? sessions[sessions.length - 1].token : '';
+}
+
+test('signup creates account and returns user', async () => {
   await withServer(async ({ port }) => {
     const res = await sendJson({
       port,
@@ -290,7 +295,7 @@ test('signup creates account and returns token', async () => {
       body: { username: 'Player1', password: 'secret123' },
     });
     assert.equal(res.status, 201);
-    assert.equal(typeof res.body.token, 'string');
+    assert.equal(typeof res.body.user.id, 'number');
     assert.equal(res.body.user.username, 'Player1');
   });
 });
@@ -367,9 +372,9 @@ test('signup validates short password with explicit message', async () => {
   });
 });
 
-test('login returns token for valid credentials', async () => {
-  await withServer(async ({ port }) => {
-    await sendJson({
+test('login returns user for valid credentials', async () => {
+  await withServer(async ({ port, pool }) => {
+    const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
@@ -382,19 +387,22 @@ test('login returns token for valid credentials', async () => {
       body: { username: 'player1', password: 'secret123' },
     });
     assert.equal(login.status, 200);
-    assert.equal(typeof login.body.token, 'string');
+    assert.equal(login.body.user.username, 'Player1');
+    const token = latestTokenForUser(pool, signup.body.user.id);
+    assert.equal(typeof token, 'string');
+    assert.ok(token.length > 0);
   });
 });
 
 test('logout invalidates session token', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'Player1', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
 
     const beforeLogout = await sendJson({
       port,
@@ -437,14 +445,14 @@ test('POST /scores requires authentication', async () => {
 });
 
 test('POST /scores rejects negative score for authenticated user', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'Player1', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
     const res = await sendJson({
       port,
       method: 'POST',
@@ -458,14 +466,14 @@ test('POST /scores rejects negative score for authenticated user', async () => {
 });
 
 test('POST /scores returns 429 when rate limit exceeded', async () => {
-  await withServer({ scoreRateLimitMax: 1, scoreRateLimitWindowMs: 60000 }, async ({ port }) => {
+  await withServer({ scoreRateLimitMax: 1, scoreRateLimitWindowMs: 60000 }, async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'Player1', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
 
     const first = await sendJson({
       port,
@@ -502,18 +510,20 @@ test('GET /scores keeps stable ordering on score ties by created_at asc', async 
       body: { username: 'Bravo', password: 'secret123' },
     });
 
+    const signupAToken = latestTokenForUser(pool, signupA.body.user.id);
+    const signupBToken = latestTokenForUser(pool, signupB.body.user.id);
     await sendJson({
       port,
       method: 'POST',
       path: '/scores',
-      headers: { Authorization: `Bearer ${signupA.body.token}` },
+      headers: { Authorization: `Bearer ${signupAToken}` },
       body: { score: 50, difficulty: 'easy' },
     });
     await sendJson({
       port,
       method: 'POST',
       path: '/scores',
-      headers: { Authorization: `Bearer ${signupB.body.token}` },
+      headers: { Authorization: `Bearer ${signupBToken}` },
       body: { score: 50, difficulty: 'easy' },
     });
 
@@ -541,14 +551,14 @@ test('DELETE /scores requires admin authentication', async () => {
 });
 
 test('DELETE /scores requires admin token even for authenticated admin', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
     const forbidden = await sendJson({
       port,
       method: 'DELETE',
@@ -560,14 +570,14 @@ test('DELETE /scores requires admin token even for authenticated admin', async (
 });
 
 test('DELETE /scores returns 403 for authenticated non-admin user', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'player1', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
     const forbidden = await sendJson({
       port,
       method: 'DELETE',
@@ -579,14 +589,14 @@ test('DELETE /scores returns 403 for authenticated non-admin user', async () => 
 });
 
 test('DELETE /scores succeeds for authenticated admin with valid token', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
 
     const save = await sendJson({
       port,
@@ -617,14 +627,14 @@ test('DELETE /scores succeeds for authenticated admin with valid token', async (
 });
 
 test('DELETE /scores returns 429 when admin rate limit exceeded', async () => {
-  await withServer({ adminRateLimitMax: 1, adminRateLimitWindowMs: 60000 }, async ({ port }) => {
+  await withServer({ adminRateLimitMax: 1, adminRateLimitWindowMs: 60000 }, async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
     const first = await sendJson({
       port,
       method: 'DELETE',
@@ -664,14 +674,14 @@ test('auth endpoints return 429 when auth rate limit exceeded', async () => {
 });
 
 test('analytics session start/end flow updates admin dashboard metrics', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const adminSignup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const adminToken = adminSignup.body.token;
+    const adminToken = latestTokenForUser(pool, adminSignup.body.user.id);
 
     const started = await sendJson({
       port,
@@ -715,14 +725,14 @@ test('analytics session start/end flow updates admin dashboard metrics', async (
 });
 
 test('analytics end rejects invalid session id', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const signup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'Player1', password: 'secret123' },
     });
-    const token = signup.body.token;
+    const token = latestTokenForUser(pool, signup.body.user.id);
 
     const ended = await sendJson({
       port,
@@ -743,14 +753,14 @@ test('analytics end rejects invalid session id', async () => {
 });
 
 test('DELETE /admin/statistics requires admin token and clears sessions', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const adminSignup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const adminToken = adminSignup.body.token;
+    const adminToken = latestTokenForUser(pool, adminSignup.body.user.id);
 
     const started = await sendJson({
       port,
@@ -803,14 +813,14 @@ test('DELETE /admin/statistics requires admin token and clears sessions', async 
 });
 
 test('admin per-user games and wins count only completed sessions', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const adminSignup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const adminToken = adminSignup.body.token;
+    const adminToken = latestTokenForUser(pool, adminSignup.body.user.id);
 
     const startedOpen = await sendJson({
       port,
@@ -859,14 +869,14 @@ test('admin per-user games and wins count only completed sessions', async () => 
 });
 
 test('DELETE /admin/users/:id deletes user and cascades scores/statistics', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const adminSignup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const adminToken = adminSignup.body.token;
+    const adminToken = latestTokenForUser(pool, adminSignup.body.user.id);
 
     const playerSignup = await sendJson({
       port,
@@ -874,7 +884,7 @@ test('DELETE /admin/users/:id deletes user and cascades scores/statistics', asyn
       path: '/auth/signup',
       body: { username: 'player1', password: 'secret123' },
     });
-    const playerToken = playerSignup.body.token;
+    const playerToken = latestTokenForUser(pool, playerSignup.body.user.id);
     const playerId = playerSignup.body.user.id;
 
     await sendJson({
@@ -926,14 +936,14 @@ test('DELETE /admin/users/:id deletes user and cascades scores/statistics', asyn
 });
 
 test('DELETE /admin/users/:id rejects deleting own admin account', async () => {
-  await withServer(async ({ port }) => {
+  await withServer(async ({ port, pool }) => {
     const adminSignup = await sendJson({
       port,
       method: 'POST',
       path: '/auth/signup',
       body: { username: 'admin', password: 'secret123' },
     });
-    const adminToken = adminSignup.body.token;
+    const adminToken = latestTokenForUser(pool, adminSignup.body.user.id);
     const adminId = adminSignup.body.user.id;
 
     const res = await sendJson({

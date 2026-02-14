@@ -27,6 +27,16 @@ function parseBoolean(value, fallback) {
   return fallback;
 }
 
+function parseTrustProxy(value, fallback) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['false', '0', 'off', 'no'].includes(normalized)) return false;
+  if (['true', 'on', 'yes'].includes(normalized)) return true;
+  const hopCount = Number.parseInt(normalized, 10);
+  if (Number.isFinite(hopCount) && hopCount >= 0) return hopCount;
+  return fallback;
+}
+
 function normalizeUsername(username) {
   return typeof username === 'string' ? username.trim().toLowerCase() : '';
 }
@@ -38,6 +48,41 @@ function normalizeOrigin(origin) {
 function normalizeIp(req) {
   const ip = req?.ip || req?.socket?.remoteAddress || 'unknown';
   return typeof ip === 'string' ? ip.trim() : 'unknown';
+}
+
+function parseCookies(cookieHeader) {
+  if (!cookieHeader || typeof cookieHeader !== 'string') return {};
+  return cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((acc, part) => {
+      const eq = part.indexOf('=');
+      if (eq <= 0) return acc;
+      const key = part.slice(0, eq).trim();
+      const value = part.slice(eq + 1).trim();
+      if (!key) return acc;
+      try {
+        acc[key] = decodeURIComponent(value);
+      } catch {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+}
+
+function serializeSessionCookie(name, value, maxAgeSeconds, secure) {
+  const encodedName = encodeURIComponent(name);
+  const encodedValue = encodeURIComponent(value);
+  const parts = [
+    `${encodedName}=${encodedValue}`,
+    'Path=/',
+    `Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`,
+    'HttpOnly',
+    'SameSite=Lax',
+  ];
+  if (secure) parts.push('Secure');
+  return parts.join('; ');
 }
 
 function validateSignupPayload(body) {
@@ -126,6 +171,15 @@ async function ensureSchema(pool) {
       difficulty TEXT CHECK (difficulty IN ('easy', 'normal', 'hard'))
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS request_rate_limits (
+      limiter_key TEXT NOT NULL,
+      bucket_start TIMESTAMPTZ NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (limiter_key, bucket_start)
+    )
+  `);
   await pool.query('ALTER TABLE scores ADD COLUMN IF NOT EXISTS user_id INTEGER');
   await pool.query(`
     DO $$
@@ -156,17 +210,20 @@ async function ensureSchema(pool) {
   await pool.query('CREATE INDEX IF NOT EXISTS game_sessions_started_at_idx ON game_sessions (started_at)');
 }
 
-async function hasRequiredSchema(pool) {
+async function hasRequiredSchema(pool, { requireRateLimitTable = false } = {}) {
   const sql = `
     SELECT
       to_regclass('public.users') IS NOT NULL AS users_exists,
       to_regclass('public.user_sessions') IS NOT NULL AS user_sessions_exists,
       to_regclass('public.scores') IS NOT NULL AS scores_exists,
-      to_regclass('public.game_sessions') IS NOT NULL AS game_sessions_exists
+      to_regclass('public.game_sessions') IS NOT NULL AS game_sessions_exists,
+      to_regclass('public.request_rate_limits') IS NOT NULL AS request_rate_limits_exists
   `;
   const result = await pool.query(sql);
   const row = result.rows[0] || {};
-  return Boolean(row.users_exists && row.user_sessions_exists && row.scores_exists && row.game_sessions_exists);
+  const baseOk = Boolean(row.users_exists && row.user_sessions_exists && row.scores_exists && row.game_sessions_exists);
+  if (!requireRateLimitTable) return baseOk;
+  return baseOk && Boolean(row.request_rate_limits_exists);
 }
 
 function timingSafeEqualString(a, b) {
@@ -181,6 +238,7 @@ function createInMemoryRateLimiter({
   max,
   windowMs,
   keyFn,
+  maxEntries = 10000,
   errorBody = { error: 'Too many requests' },
 }) {
   const state = new Map();
@@ -191,6 +249,19 @@ function createInMemoryRateLimiter({
     lastCleanupAt = now;
     for (const [key, value] of state.entries()) {
       if (now - value.windowStart >= windowMs) state.delete(key);
+    }
+  }
+
+  function evictIfNeeded(now) {
+    if (state.size < maxEntries) return;
+    cleanup(now);
+    if (state.size < maxEntries) return;
+    const removeCount = Math.max(1, Math.floor(maxEntries * 0.1));
+    let removed = 0;
+    for (const key of state.keys()) {
+      state.delete(key);
+      removed += 1;
+      if (removed >= removeCount) break;
     }
   }
 
@@ -205,6 +276,7 @@ function createInMemoryRateLimiter({
     }
     const current = state.get(key);
     if (!current || now - current.windowStart >= windowMs) {
+      evictIfNeeded(now);
       state.set(key, { count: 1, windowStart: now });
       return next();
     }
@@ -216,10 +288,65 @@ function createInMemoryRateLimiter({
   };
 }
 
+function createPostgresRateLimiter({
+  pool,
+  name = 'default',
+  max,
+  windowMs,
+  keyFn,
+  errorBody = { error: 'Too many requests' },
+}) {
+  let lastCleanupAt = 0;
+  const cleanupEveryMs = Math.max(windowMs, 60 * 1000);
+
+  return async (req, res, next) => {
+    const now = Date.now();
+    let key = 'unknown';
+    try {
+      key = keyFn(req) || 'unknown';
+    } catch {
+      key = 'unknown';
+    }
+    const namespacedKey = `${name}:${String(key)}`;
+    const safeKey = crypto.createHash('sha256').update(namespacedKey).digest('hex');
+    const bucketStartMs = Math.floor(now / windowMs) * windowMs;
+    const bucketStartIso = new Date(bucketStartMs).toISOString();
+
+    try {
+      if (now - lastCleanupAt >= cleanupEveryMs) {
+        lastCleanupAt = now;
+        await pool.query(
+          'DELETE FROM request_rate_limits WHERE bucket_start < NOW() - ($1::bigint * interval \'1 millisecond\')',
+          [windowMs * 2],
+        );
+      }
+      const sql = `
+        INSERT INTO request_rate_limits (limiter_key, bucket_start, count, updated_at)
+        VALUES ($1, $2::timestamptz, 1, NOW())
+        ON CONFLICT (limiter_key, bucket_start)
+        DO UPDATE SET
+          count = request_rate_limits.count + 1,
+          updated_at = NOW()
+        RETURNING count
+      `;
+      const result = await pool.query(sql, [safeKey, bucketStartIso]);
+      const count = Number(result.rows?.[0]?.count || 0);
+      if (count > max) {
+        return res.status(429).json(errorBody);
+      }
+      return next();
+    } catch {
+      return res.status(503).json({ error: 'Rate limiter unavailable' });
+    }
+  };
+}
+
 export function createApp({
   pool,
   adminResetToken = process.env.ADMIN_RESET_TOKEN,
   adminUsername = process.env.ADMIN_USERNAME || 'harel',
+  sessionCookieName = process.env.SESSION_COOKIE_NAME || 'shadowdog_session',
+  rateLimitStore = String(process.env.RATE_LIMIT_STORE || 'memory').trim().toLowerCase(),
   corsOrigins = process.env.CORS_ORIGINS || '',
   scoreRateLimitMax = parsePositiveInt(process.env.SCORE_RATE_LIMIT_MAX, 30),
   scoreRateLimitWindowMs = parsePositiveInt(process.env.SCORE_RATE_LIMIT_WINDOW_MS, 60000),
@@ -229,9 +356,12 @@ export function createApp({
   authRateLimitWindowMs = parsePositiveInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60000),
   authIdentityRateLimitMax = parsePositiveInt(process.env.AUTH_IDENTITY_RATE_LIMIT_MAX, 5),
   authIdentityRateLimitWindowMs = parsePositiveInt(process.env.AUTH_IDENTITY_RATE_LIMIT_WINDOW_MS, 60000),
+  analyticsRateLimitMax = parsePositiveInt(process.env.ANALYTICS_RATE_LIMIT_MAX, 120),
+  analyticsRateLimitWindowMs = parsePositiveInt(process.env.ANALYTICS_RATE_LIMIT_WINDOW_MS, 60000),
+  rateLimiterMaxEntries = parsePositiveInt(process.env.RATE_LIMITER_MAX_ENTRIES, 10000),
   apiBodyLimitBytes = parsePositiveInt(process.env.API_BODY_LIMIT_BYTES, DEFAULT_API_BODY_LIMIT_BYTES),
   sessionTtlMs = parsePositiveInt(process.env.SESSION_TTL_MS, DEFAULT_SESSION_TTL_MS),
-  trustProxy = parseBoolean(process.env.TRUST_PROXY, process.env.NODE_ENV === 'production'),
+  trustProxy = parseTrustProxy(process.env.TRUST_PROXY, process.env.NODE_ENV === 'production' ? 1 : false),
 } = {}) {
   if (!pool || typeof pool.query !== 'function') {
     throw new Error('A database pool with a query method is required');
@@ -268,25 +398,43 @@ export function createApp({
       if (allowAnyOrigin || allowedOriginsSet.has(normalized)) return callback(null, true);
       return callback(null, false);
     },
+    credentials: true,
   }));
   app.use(express.json({ limit: apiBodyLimitBytes }));
 
-  const scoreRateLimitMiddleware = createInMemoryRateLimiter({
+  const createRateLimiter = (config) => {
+    if (rateLimitStore === 'database') {
+      return createPostgresRateLimiter({ pool, ...config });
+    }
+    return createInMemoryRateLimiter({ ...config, maxEntries: rateLimiterMaxEntries });
+  };
+
+  const scoreRateLimitMiddleware = createRateLimiter({
+    name: 'scores_write',
     max: scoreRateLimitMax,
     windowMs: scoreRateLimitWindowMs,
     keyFn: (req) => req.ip || req.socket?.remoteAddress || 'unknown',
   });
-  const authRateLimitMiddleware = createInMemoryRateLimiter({
+  const authRateLimitMiddleware = createRateLimiter({
+    name: 'auth_ip',
     max: authRateLimitMax,
     windowMs: authRateLimitWindowMs,
     keyFn: (req) => normalizeIp(req),
   });
-  const authIdentityRateLimitMiddleware = createInMemoryRateLimiter({
+  const authIdentityRateLimitMiddleware = createRateLimiter({
+    name: 'auth_identity',
     max: authIdentityRateLimitMax,
     windowMs: authIdentityRateLimitWindowMs,
     keyFn: (req) => `${normalizeIp(req)}:${normalizeUsername(req.body?.username) || 'unknown'}`,
   });
-  const adminRateLimitMiddleware = createInMemoryRateLimiter({
+  const analyticsRateLimitMiddleware = createRateLimiter({
+    name: 'analytics',
+    max: analyticsRateLimitMax,
+    windowMs: analyticsRateLimitWindowMs,
+    keyFn: (req) => `${normalizeIp(req)}:${req.user?.id || 'anon'}`,
+  });
+  const adminRateLimitMiddleware = createRateLimiter({
+    name: 'admin',
     max: adminRateLimitMax,
     windowMs: adminRateLimitWindowMs,
     keyFn: (req) => normalizeIp(req),
@@ -307,9 +455,16 @@ export function createApp({
     return token;
   }
 
-  async function requireAuth(req, res, next) {
+  function getRequestToken(req) {
     const authHeader = req.get('authorization') || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const cookies = parseCookies(req.get('cookie') || '');
+    const cookieToken = cookies[sessionCookieName] || '';
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    return bearerToken || cookieToken;
+  }
+
+  async function requireAuth(req, res, next) {
+    const token = getRequestToken(req);
     if (!token) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -383,7 +538,9 @@ export function createApp({
       const userResult = await pool.query(userSql, [trimmedUsername, usernameNorm, passwordHash]);
       const user = userResult.rows[0];
       const token = await issueSession(user.id);
-      return res.status(201).json({ token, user });
+      const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure);
+      res.setHeader('Set-Cookie', cookie);
+      return res.status(201).json({ user });
     } catch (err) {
       if (err?.code === '23505') {
         return res.status(409).json({ error: 'Username already exists' });
@@ -412,15 +569,31 @@ export function createApp({
       }
       const user = { id: userResult.rows[0].id, username: userResult.rows[0].username };
       const token = await issueSession(user.id);
-      return res.json({ token, user });
+      const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure);
+      res.setHeader('Set-Cookie', cookie);
+      return res.json({ user });
     } catch {
       return res.status(500).json({ error: 'Failed to login' });
     }
   });
 
-  app.post('/auth/logout', requireAuth, async (req, res) => {
+  app.get('/auth/me', requireAuth, async (req, res) => {
+    return res.json({
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+      },
+    });
+  });
+
+  app.post('/auth/logout', async (req, res) => {
     try {
-      await pool.query('DELETE FROM user_sessions WHERE token = $1', [req.token]);
+      const token = getRequestToken(req);
+      if (token) {
+        await pool.query('DELETE FROM user_sessions WHERE token = $1', [token]);
+      }
+      const cookie = serializeSessionCookie(sessionCookieName, '', 0, req.secure);
+      res.setHeader('Set-Cookie', cookie);
       return res.json({ ok: true });
     } catch {
       return res.status(500).json({ error: 'Failed to logout' });
@@ -473,7 +646,7 @@ export function createApp({
     }
   });
 
-  app.post('/analytics/session/start', requireAuth, async (req, res) => {
+  app.post('/analytics/session/start', requireAuth, analyticsRateLimitMiddleware, async (req, res) => {
     try {
       const sql = `
         INSERT INTO game_sessions (user_id, started_at)
@@ -487,7 +660,7 @@ export function createApp({
     }
   });
 
-  app.post('/analytics/session/end', requireAuth, async (req, res) => {
+  app.post('/analytics/session/end', requireAuth, analyticsRateLimitMiddleware, async (req, res) => {
     try {
       const { sessionId, durationMs, didWin, score, difficulty } = req.body || {};
       if (!Number.isInteger(sessionId) || sessionId <= 0) {
@@ -873,11 +1046,13 @@ async function startServer() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
   });
+  const rateLimitStore = String(process.env.RATE_LIMIT_STORE || 'memory').trim().toLowerCase();
+  const requireRateLimitTable = rateLimitStore === 'database';
   const autoMigrateOnStart = parseBoolean(process.env.AUTO_MIGRATE_ON_START, false);
   if (autoMigrateOnStart) {
     await ensureSchema(pool);
   } else {
-    const schemaReady = await hasRequiredSchema(pool);
+    const schemaReady = await hasRequiredSchema(pool, { requireRateLimitTable });
     if (!schemaReady) {
       throw new Error('Database schema is missing. Run server/db/schema.sql or set AUTO_MIGRATE_ON_START=true for first boot.');
     }

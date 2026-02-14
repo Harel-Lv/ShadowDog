@@ -22,18 +22,28 @@ services:
         value: harel
       - key: ADMIN_RESET_TOKEN
         sync: false
+      - key: SESSION_COOKIE_NAME
+        value: shadowdog_session
       - key: CORS_ORIGINS
         sync: false
       - key: TRUST_PROXY
-        value: "true"
+        value: "1"
       - key: AUTO_MIGRATE_ON_START
         value: "true"
+      - key: RATE_LIMIT_STORE
+        value: "database"
       - key: SESSION_TTL_MS
         value: "604800000"
       - key: AUTH_IDENTITY_RATE_LIMIT_MAX
         value: "5"
       - key: AUTH_IDENTITY_RATE_LIMIT_WINDOW_MS
         value: "60000"
+      - key: ANALYTICS_RATE_LIMIT_MAX
+        value: "120"
+      - key: ANALYTICS_RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: RATE_LIMITER_MAX_ENTRIES
+        value: "10000"
       - key: API_BODY_LIMIT_BYTES
         value: "16384"
 

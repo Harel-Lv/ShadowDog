@@ -6,7 +6,8 @@ The game now supports account signup/login with `username + password` (no email)
 
 - `POST /auth/signup` with `{ username, password }`
 - `POST /auth/login` with `{ username, password }`
-- `POST /auth/logout` with `Authorization: Bearer <token>`
+- `POST /auth/logout` clears the session cookie
+- `GET /auth/me` returns the logged-in user (cookie-based session)
 
 `POST /scores` requires authentication and saves score for the logged-in user only.
 
@@ -29,13 +30,9 @@ Set allowed browser origins with:
 
 If not set, the server allows common local dev origins (`localhost/127.0.0.1` on ports `5500` and `3000`).
 
-## Admin UI toggle
+## Admin UI visibility
 
-To show the `Reset Scores` button in the client, set:
-
-`window.IS_ADMIN = true`
-
-`'true'`, `1`, and `'1'` are also accepted.
+Admin actions are shown only when a logged-in username matches `ADMIN_USERNAME` on the server.
 
 Also make sure the client API base and server port match (for example, `window.API_BASE = 'http://127.0.0.1:3002'` with `PORT=3002`).
 
@@ -65,11 +62,16 @@ Optional server env vars:
 
 - `AUTH_RATE_LIMIT_MAX` (default: `10`)
 - `AUTH_RATE_LIMIT_WINDOW_MS` (default: `60000`)
-- `SESSION_TTL_MS` (default: `2592000000` = 30 days)
-- `TRUST_PROXY` (default: `false`, set to `true` behind a reverse proxy)
+- `ANALYTICS_RATE_LIMIT_MAX` (default: `120`)
+- `ANALYTICS_RATE_LIMIT_WINDOW_MS` (default: `60000`)
+- `RATE_LIMITER_MAX_ENTRIES` (default: `10000`)
+- `SESSION_COOKIE_NAME` (default: `shadowdog_session`)
+- `RATE_LIMIT_STORE` (default: `memory`, recommended: `database` on shared deployments)
+- `SESSION_TTL_MS` (default: `604800000` = 7 days)
+- `TRUST_PROXY` (default: `false`, recommended `1` behind a single reverse proxy hop)
 - `AUTO_MIGRATE_ON_START` (default: `false`; enable only if you want schema bootstrap on startup)
 
-Note: auth token is stored in `sessionStorage` (not `localStorage`) so browser restarts log users out by default.
+Note: browser auth now uses an `HttpOnly` session cookie by default (not accessible from JavaScript).
 
 ## Deploy on Render
 
@@ -87,7 +89,7 @@ Steps:
    - `ADMIN_USERNAME`
    - `ADMIN_RESET_TOKEN`
    - `CORS_ORIGINS` (your client URL, e.g. `https://shadowdog-client.onrender.com`)
-   - `TRUST_PROXY=true`
+   - `TRUST_PROXY=1`
 4. Run `server/db/schema.sql` on the new Render database.
 5. Update client API URL in `client/game.html`:
    - set `window.SHADOWDOG_CONFIG.apiBase` to your API URL (e.g. `https://shadowdog-api.onrender.com`)

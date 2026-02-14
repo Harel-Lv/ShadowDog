@@ -34,10 +34,6 @@ window.addEventListener('load', () => {
         const resetScoresButton = document.getElementById('resetScoresButton');
         const runtimeConfig = window.SHADOWDOG_CONFIG || {};
         const adminUsername = String(runtimeConfig.adminUsername || window.ADMIN_USERNAME || 'harel').trim().toLowerCase();
-        const isAdmin = window.IS_ADMIN === true ||
-            window.IS_ADMIN === 'true' ||
-            window.IS_ADMIN === 1 ||
-            window.IS_ADMIN === '1';
         const openSignupButton = document.getElementById('openSignupButton');
         const openLoginButton = document.getElementById('openLoginButton');
         const authUsernameInput = document.getElementById('authUsername');
@@ -82,14 +78,10 @@ window.addEventListener('load', () => {
         };
         let selectedDifficulty = 'normal';
         let playerName = 'Player';
-        const AUTH_TOKEN_KEY = 'shadowdog_auth_token';
-        const AUTH_USER_KEY = 'shadowdog_auth_user';
         const AUDIO_MUTED_KEY = 'shadowdog_audio_muted';
-        const previousLocalToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
-        const previousLocalUser = localStorage.getItem(AUTH_USER_KEY) || '';
         const savedAudioMuted = localStorage.getItem(AUDIO_MUTED_KEY) === '1';
-        let authToken = sessionStorage.getItem(AUTH_TOKEN_KEY) || previousLocalToken;
-        let currentUser = sessionStorage.getItem(AUTH_USER_KEY) || previousLocalUser;
+        let authToken = '';
+        let currentUser = '';
         let authMode = 'login';
         let adminTokenResolver = null;
         let toastTimer = null;
@@ -122,13 +114,6 @@ window.addEventListener('load', () => {
             }
         }
 
-        if (previousLocalToken && !sessionStorage.getItem(AUTH_TOKEN_KEY)) {
-            sessionStorage.setItem(AUTH_TOKEN_KEY, previousLocalToken);
-            sessionStorage.setItem(AUTH_USER_KEY, previousLocalUser);
-            localStorage.removeItem(AUTH_TOKEN_KEY);
-            localStorage.removeItem(AUTH_USER_KEY);
-        }
-
         function showToast(message, type = 'error') {
             if (!toast) return;
             toast.textContent = message;
@@ -138,6 +123,15 @@ window.addEventListener('load', () => {
             toastTimer = setTimeout(() => {
                 toast.style.display = 'none';
             }, 2600);
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function getPublicGameUrl() {
@@ -192,21 +186,13 @@ window.addEventListener('load', () => {
         function setAuthState(token, username) {
             authToken = token || '';
             currentUser = username || '';
-            if (authToken) {
-                sessionStorage.setItem(AUTH_TOKEN_KEY, authToken);
-                sessionStorage.setItem(AUTH_USER_KEY, currentUser);
-                localStorage.removeItem(AUTH_TOKEN_KEY);
-                localStorage.removeItem(AUTH_USER_KEY);
+            if (currentUser) {
                 authStatus.textContent = `Logged in as ${currentUser}`;
                 authStatusTop.textContent = currentUser;
                 openSignupButton.style.display = 'none';
                 openLoginButton.style.display = 'none';
                 logoutButton.style.display = 'inline-block';
             } else {
-                sessionStorage.removeItem(AUTH_TOKEN_KEY);
-                sessionStorage.removeItem(AUTH_USER_KEY);
-                localStorage.removeItem(AUTH_TOKEN_KEY);
-                localStorage.removeItem(AUTH_USER_KEY);
                 authStatus.textContent = 'Guest mode (scores will not be saved)';
                 authStatusTop.textContent = 'Guest';
                 openSignupButton.style.display = 'inline-block';
@@ -223,7 +209,7 @@ window.addEventListener('load', () => {
 
         function userCanSeeAdminReset() {
             const loggedInAdmin = Boolean(currentUser) && currentUser.trim().toLowerCase() === adminUsername;
-            return isAdmin || loggedInAdmin;
+            return loggedInAdmin;
         }
 
         function updateAdminToolsVisibility() {
@@ -275,10 +261,23 @@ window.addEventListener('load', () => {
             });
         }
 
+        async function apiFetch(path, options = {}) {
+            const opts = { ...options };
+            const headers = { ...(opts.headers || {}) };
+            if (authToken && !headers.Authorization) {
+                headers.Authorization = `Bearer ${authToken}`;
+            }
+            opts.headers = headers;
+            if (!opts.credentials) {
+                opts.credentials = 'include';
+            }
+            return fetch(apiUrl(path), opts);
+        }
+
         async function authRequest(path, payload) {
             let res;
             try {
-                res = await fetch(apiUrl(path), {
+                res = await apiFetch(path, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -293,13 +292,26 @@ window.addEventListener('load', () => {
             return data;
         }
 
+        async function hydrateAuthFromServer() {
+            try {
+                const res = await apiFetch('/auth/me');
+                if (!res.ok) {
+                    setAuthState('', '');
+                    return;
+                }
+                const data = await res.json().catch(() => ({}));
+                setAuthState('', data?.user?.username || '');
+            } catch {
+                setAuthState('', '');
+            }
+        }
+
         async function startGameSessionTracking() {
             activeGameSessionId = null;
-            if (!authToken || !currentUser) return;
+            if (!currentUser) return;
             try {
-                const res = await fetch(apiUrl('/analytics/session/start'), {
+                const res = await apiFetch('/analytics/session/start', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${authToken}` }
                 });
                 const data = await res.json().catch(() => ({}));
                 const serverSessionId = data?.sessionId ?? data?.id;
@@ -314,7 +326,7 @@ window.addEventListener('load', () => {
         async function endGameSessionTracking(gameInstance, didWin) {
             const sessionId = activeGameSessionId;
             activeGameSessionId = null;
-            if (!sessionId || !authToken || !currentUser || !gameInstance) return;
+            if (!sessionId || !currentUser || !gameInstance) return;
             const durationMs = Math.max(0, Math.round(gameInstance.time || 0));
             const payload = {
                 sessionId,
@@ -324,11 +336,10 @@ window.addEventListener('load', () => {
                 difficulty: String(gameInstance.difficulty || 'normal')
             };
             try {
-                await fetch(apiUrl('/analytics/session/end'), {
+                await apiFetch('/analytics/session/end', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
                     },
                     body: JSON.stringify(payload)
                 });
@@ -357,7 +368,11 @@ window.addEventListener('load', () => {
             if (!container) return;
             const data = Array.isArray(rows) ? rows.slice(0, 7) : [];
             if (data.length === 0) {
-                container.innerHTML = '<div class="adminTrendLabel">No weekly data yet</div>';
+                container.innerHTML = '';
+                const emptyState = document.createElement('div');
+                emptyState.className = 'adminTrendLabel';
+                emptyState.textContent = 'No weekly data yet';
+                container.appendChild(emptyState);
                 return;
             }
             const width = 920;
@@ -373,8 +388,8 @@ window.addEventListener('load', () => {
                 return { x, y, label: formatShortDay(d?.day), users: Number(d?.users || 0) };
             });
             const dPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
-            const pointsSvg = points.map((p) => `<circle class="adminTrendDot" cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="3.5"><title>${p.label}: ${p.users} players</title></circle>`).join('');
-            const labelsSvg = points.map((p) => `<text class="adminTrendLabel" x="${p.x.toFixed(2)}" y="${(height - 4).toFixed(2)}" text-anchor="middle">${p.label}</text>`).join('');
+            const pointsSvg = points.map((p) => `<circle class="adminTrendDot" cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="3.5"><title>${escapeHtml(p.label)}: ${Number(p.users) || 0} players</title></circle>`).join('');
+            const labelsSvg = points.map((p) => `<text class="adminTrendLabel" x="${p.x.toFixed(2)}" y="${(height - 4).toFixed(2)}" text-anchor="middle">${escapeHtml(p.label)}</text>`).join('');
             container.innerHTML = `
                 <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Weekly connected players trend">
                     <line class="adminTrendAxis" x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}"></line>
@@ -387,12 +402,8 @@ window.addEventListener('load', () => {
         }
 
         async function adminFetch(path) {
-            if (!authToken) throw new Error('Login as admin first');
-            const res = await fetch(apiUrl(path), {
-                headers: {
-                    'Authorization': `Bearer ${authToken}`
-                }
-            });
+            if (!currentUser) throw new Error('Login as admin first');
+            const res = await apiFetch(path);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 const message = data.error || `Failed admin request (${res.status})`;
@@ -428,10 +439,10 @@ window.addEventListener('load', () => {
                 }
                 const totalPlay = formatDuration(Number(overview.total_play_time_ms || 0));
                 adminOverview.innerHTML = `
-                    <div><strong>Total users:</strong> ${overview.total_users ?? 0}</div>
-                    <div><strong>Total games:</strong> ${overview.total_games ?? 0}</div>
-                    <div><strong>Total play time:</strong> ${totalPlay}</div>
-                    <div><strong>Total wins:</strong> ${overview.total_wins ?? 0}</div>
+                    <div><strong>Total users:</strong> ${escapeHtml(overview.total_users ?? 0)}</div>
+                    <div><strong>Total games:</strong> ${escapeHtml(overview.total_games ?? 0)}</div>
+                    <div><strong>Total play time:</strong> ${escapeHtml(totalPlay)}</div>
+                    <div><strong>Total wins:</strong> ${escapeHtml(overview.total_wins ?? 0)}</div>
                 `;
                 renderWeeklyTrendChart(adminWeeklyTrend, weeklyTraffic);
                 adminUsersBody.innerHTML = '';
@@ -445,14 +456,14 @@ window.addEventListener('load', () => {
                     const userId = Number(u.id || 0);
                     const canDelete = Number.isInteger(userId) && userId > 0 && String(u.username || '').trim().toLowerCase() !== adminUsername;
                     tr.innerHTML = `
-                        <td>${u.username || '-'}</td>
-                        <td>${registered}</td>
-                        <td>${formatDuration(Number(u.total_play_time_ms || 0))}</td>
-                        <td>${u.games_played ?? 0}</td>
-                        <td>${u.games_won ?? 0}</td>
-                        <td>${u.best_score ?? 0}</td>
-                        <td>${lastPlayed}</td>
-                        <td>${canDelete ? `<button type="button" class="adminDeleteBtn" data-user-id="${userId}" data-username="${String(u.username || '').replace(/"/g, '&quot;')}">Delete</button>` : '-'}</td>
+                        <td>${escapeHtml(u.username || '-')}</td>
+                        <td>${escapeHtml(registered)}</td>
+                        <td>${escapeHtml(formatDuration(Number(u.total_play_time_ms || 0)))}</td>
+                        <td>${escapeHtml(u.games_played ?? 0)}</td>
+                        <td>${escapeHtml(u.games_won ?? 0)}</td>
+                        <td>${escapeHtml(u.best_score ?? 0)}</td>
+                        <td>${escapeHtml(lastPlayed)}</td>
+                        <td>${canDelete ? `<button type="button" class="adminDeleteBtn" data-user-id="${userId}" data-username="${escapeHtml(String(u.username || ''))}">Delete</button>` : '-'}</td>
                     `;
                     adminUsersBody.appendChild(tr);
                 });
@@ -467,8 +478,7 @@ window.addEventListener('load', () => {
                         const adminToken = await requestAdminToken('delete this player');
                         if (!adminToken) return;
                         const headers = { 'x-admin-token': adminToken.trim() };
-                        if (authToken) headers.Authorization = `Bearer ${authToken}`;
-                        const res = await fetch(apiUrl(`/admin/users/${userId}`), {
+                        const res = await apiFetch(`/admin/users/${userId}`, {
                             method: 'DELETE',
                             headers
                         }).catch(() => null);
@@ -507,17 +517,16 @@ window.addEventListener('load', () => {
         }
 
         async function saveScore(game) {
-            if (!authToken) return false;
+            if (!currentUser) return false;
             const entry = {
                 score: game.score,
                 difficulty: game.difficulty
             };
             try {
-                const res = await fetch(apiUrl('/scores'), {
+                const res = await apiFetch('/scores', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
                     },
                     body: JSON.stringify(entry)
                 });
@@ -770,7 +779,8 @@ window.addEventListener('load', () => {
             });
         }
 
-        setAuthState(authToken, currentUser);
+        setAuthState('', '');
+        hydrateAuthFromServer();
         updateAudioToggleLabel();
         unlockAndStartBgm();
         window.addEventListener('pointerdown', unlockAndStartBgm, { once: true, passive: true });
@@ -852,7 +862,7 @@ window.addEventListener('load', () => {
             try {
                 const path = authMode === 'signup' ? '/auth/signup' : '/auth/login';
                 const data = await authRequest(path, { username, password });
-                setAuthState(data.token, data.user?.username || username);
+                setAuthState('', data.user?.username || username);
                 closeAuthModal();
             } catch (err) {
                 authStatus.textContent = err.message;
@@ -860,12 +870,9 @@ window.addEventListener('load', () => {
         });
 
         logoutButton.addEventListener('click', async () => {
-            if (authToken) {
-                await fetch(apiUrl('/auth/logout'), {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                }).catch(() => {});
-            }
+            await apiFetch('/auth/logout', {
+                method: 'POST',
+            }).catch(() => {});
             setAuthState('', '');
         });
 
@@ -949,8 +956,7 @@ window.addEventListener('load', () => {
                 const headers = {
                     'x-admin-token': adminToken.trim()
                 };
-                if (authToken) headers.Authorization = `Bearer ${authToken}`;
-                const res = await fetch(apiUrl('/scores'), {
+                const res = await apiFetch('/scores', {
                     method: 'DELETE',
                     headers
                 }).catch(() => null);
@@ -984,8 +990,7 @@ window.addEventListener('load', () => {
                 const headers = {
                     'x-admin-token': adminToken.trim()
                 };
-                if (authToken) headers.Authorization = `Bearer ${authToken}`;
-                const res = await fetch(apiUrl('/admin/statistics'), {
+                const res = await apiFetch('/admin/statistics', {
                     method: 'DELETE',
                     headers
                 }).catch(() => null);

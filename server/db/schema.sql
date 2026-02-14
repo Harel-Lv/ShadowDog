@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS game_sessions (
   difficulty TEXT CHECK (difficulty IN ('easy', 'normal', 'hard'))
 );
 
+CREATE TABLE IF NOT EXISTS request_rate_limits (
+  limiter_key TEXT NOT NULL,
+  bucket_start TIMESTAMPTZ NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (limiter_key, bucket_start)
+);
+
 ALTER TABLE scores
   ADD COLUMN IF NOT EXISTS user_id INTEGER;
 DO $$
