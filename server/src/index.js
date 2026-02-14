@@ -10,7 +10,8 @@ const { Pool } = pkg;
 const DEFAULT_CORS_ORIGINS = 'http://localhost:5500,http://127.0.0.1:5500,http://localhost:3000,http://127.0.0.1:3000,https://shadowdog-client.onrender.com';
 const PASSWORD_MIN_LENGTH = 6;
 const PASSWORD_MAX_LENGTH = 128;
-const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const DEFAULT_API_BODY_LIMIT_BYTES = 16 * 1024;
 const scryptAsync = promisify(crypto.scrypt);
 
 function parsePositiveInt(value, fallback) {
@@ -32,6 +33,11 @@ function normalizeUsername(username) {
 
 function normalizeOrigin(origin) {
   return typeof origin === 'string' ? origin.trim().replace(/\/+$/, '') : '';
+}
+
+function normalizeIp(req) {
+  const ip = req?.ip || req?.socket?.remoteAddress || 'unknown';
+  return typeof ip === 'string' ? ip.trim() : 'unknown';
 }
 
 function validateSignupPayload(body) {
@@ -191,7 +197,12 @@ function createInMemoryRateLimiter({
   return (req, res, next) => {
     const now = Date.now();
     cleanup(now);
-    const key = keyFn(req);
+    let key = 'unknown';
+    try {
+      key = keyFn(req) || 'unknown';
+    } catch {
+      key = 'unknown';
+    }
     const current = state.get(key);
     if (!current || now - current.windowStart >= windowMs) {
       state.set(key, { count: 1, windowStart: now });
@@ -216,6 +227,9 @@ export function createApp({
   adminRateLimitWindowMs = parsePositiveInt(process.env.ADMIN_RATE_LIMIT_WINDOW_MS, 60000),
   authRateLimitMax = parsePositiveInt(process.env.AUTH_RATE_LIMIT_MAX, 10),
   authRateLimitWindowMs = parsePositiveInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60000),
+  authIdentityRateLimitMax = parsePositiveInt(process.env.AUTH_IDENTITY_RATE_LIMIT_MAX, 5),
+  authIdentityRateLimitWindowMs = parsePositiveInt(process.env.AUTH_IDENTITY_RATE_LIMIT_WINDOW_MS, 60000),
+  apiBodyLimitBytes = parsePositiveInt(process.env.API_BODY_LIMIT_BYTES, DEFAULT_API_BODY_LIMIT_BYTES),
   sessionTtlMs = parsePositiveInt(process.env.SESSION_TTL_MS, DEFAULT_SESSION_TTL_MS),
   trustProxy = parseBoolean(process.env.TRUST_PROXY, process.env.NODE_ENV === 'production'),
 } = {}) {
@@ -232,6 +246,21 @@ export function createApp({
 
   const app = express();
   app.set('trust proxy', trustProxy);
+  app.disable('x-powered-by');
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.secure) {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  });
   app.use(cors({
     origin(origin, callback) {
       if (!origin) return callback(null, true);
@@ -240,7 +269,7 @@ export function createApp({
       return callback(null, false);
     },
   }));
-  app.use(express.json());
+  app.use(express.json({ limit: apiBodyLimitBytes }));
 
   const scoreRateLimitMiddleware = createInMemoryRateLimiter({
     max: scoreRateLimitMax,
@@ -250,12 +279,17 @@ export function createApp({
   const authRateLimitMiddleware = createInMemoryRateLimiter({
     max: authRateLimitMax,
     windowMs: authRateLimitWindowMs,
-    keyFn: (req) => req.ip || req.socket?.remoteAddress || 'unknown',
+    keyFn: (req) => normalizeIp(req),
+  });
+  const authIdentityRateLimitMiddleware = createInMemoryRateLimiter({
+    max: authIdentityRateLimitMax,
+    windowMs: authIdentityRateLimitWindowMs,
+    keyFn: (req) => `${normalizeIp(req)}:${normalizeUsername(req.body?.username) || 'unknown'}`,
   });
   const adminRateLimitMiddleware = createInMemoryRateLimiter({
     max: adminRateLimitMax,
     windowMs: adminRateLimitWindowMs,
-    keyFn: (req) => req.ip || req.socket?.remoteAddress || 'unknown',
+    keyFn: (req) => normalizeIp(req),
   });
   let lastExpiredSessionCleanupAt = 0;
   const sessionCleanupIntervalMs = Math.min(sessionTtlMs, 60 * 60 * 1000);
@@ -330,7 +364,7 @@ export function createApp({
     }
   });
 
-  app.post('/auth/signup', authRateLimitMiddleware, async (req, res) => {
+  app.post('/auth/signup', authRateLimitMiddleware, authIdentityRateLimitMiddleware, async (req, res) => {
     try {
       await cleanupExpiredSessions();
       const validation = validateSignupPayload(req.body);
@@ -358,7 +392,7 @@ export function createApp({
     }
   });
 
-  app.post('/auth/login', authRateLimitMiddleware, async (req, res) => {
+  app.post('/auth/login', authRateLimitMiddleware, authIdentityRateLimitMiddleware, async (req, res) => {
     try {
       await cleanupExpiredSessions();
       const { username, password } = req.body || {};
@@ -811,10 +845,31 @@ export function createApp({
     }
   });
 
+  app.use((err, _req, res, next) => {
+    if (err?.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'Payload too large' });
+    }
+    if (err instanceof SyntaxError && 'body' in err) {
+      return res.status(400).json({ error: 'Invalid JSON body' });
+    }
+    return next(err);
+  });
+  app.use((err, _req, res, _next) => {
+    console.error('Unhandled server error:', err?.message || err);
+    return res.status(500).json({ error: 'Internal server error' });
+  });
+
   return app;
 }
 
 async function startServer() {
+  const adminResetToken = String(process.env.ADMIN_RESET_TOKEN || '');
+  const insecureToken =
+    adminResetToken.length < 16 ||
+    adminResetToken.toLowerCase().includes('change-me');
+  if (insecureToken) {
+    throw new Error('ADMIN_RESET_TOKEN is missing or too weak. Set a strong token (min 16 chars).');
+  }
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
   });

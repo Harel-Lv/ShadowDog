@@ -28,6 +28,14 @@ services:
         value: "true"
       - key: AUTO_MIGRATE_ON_START
         value: "true"
+      - key: SESSION_TTL_MS
+        value: "604800000"
+      - key: AUTH_IDENTITY_RATE_LIMIT_MAX
+        value: "5"
+      - key: AUTH_IDENTITY_RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: API_BODY_LIMIT_BYTES
+        value: "16384"
 
   - type: web
     name: shadowdog-client
