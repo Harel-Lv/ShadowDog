@@ -18,6 +18,7 @@ window.addEventListener('load', () => {
         let gameStarted = false;
         const restartBtn = document.getElementById('restartBtn');
         const scoresButton = document.getElementById('scoresButton');
+        const adminStatsButton = document.getElementById('adminStatsButton');
         const scoresScreen = document.getElementById('scoresScreen');
         const scoresListEasy = document.getElementById('scoresListEasy');
         const scoresListNormal = document.getElementById('scoresListNormal');
@@ -169,6 +170,7 @@ window.addEventListener('load', () => {
             const visible = userCanSeeAdminReset();
             resetScoresButton.style.display = visible ? 'inline-block' : 'none';
             if (adminPanelButton) adminPanelButton.style.display = visible ? 'inline-block' : 'none';
+            if (adminStatsButton) adminStatsButton.style.display = visible ? 'inline-block' : 'none';
         }
 
         function openAuthModal(mode) {
@@ -696,6 +698,12 @@ window.addEventListener('load', () => {
 
         if (adminPanelButton) {
             adminPanelButton.addEventListener('click', () => {
+                openAdminPanel();
+            });
+        }
+
+        if (adminStatsButton) {
+            adminStatsButton.addEventListener('click', () => {
                 openAdminPanel();
             });
         }

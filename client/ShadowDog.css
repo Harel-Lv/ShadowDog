@@ -418,6 +418,7 @@ body {
 
 #startButton,
 #scoresButton,
+#adminStatsButton,
 #confirmStart,
 #cancelStart,
 #backButton,
@@ -449,6 +450,7 @@ body {
 
 #startButton:hover,
 #scoresButton:hover,
+#adminStatsButton:hover,
 #confirmStart:hover,
 #cancelStart:hover,
 #backButton:hover,
