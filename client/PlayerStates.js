@@ -34,7 +34,7 @@ export class Sitting extends State {
         if (input.includes('ArrowRight') || input.includes('ArrowLeft')) {
             this.game.player.setState(States.RUNNING, 1);
         }
-        else if (input.includes('ArrowUp')) {
+        else if (input.includes('ArrowUp') && this.game.player.onGround()) {
             this.game.player.setState(States.JUMPING, 1);
         }
         else if (input.includes('Enter')&& this.game.player.stamina > 10) {
@@ -60,7 +60,7 @@ export class Running extends State {
         }
         if (input.includes('ArrowDown')) {
             this.game.player.setState(States.SITTING, 0);
-        } else if (input.includes('ArrowUp')) {
+        } else if (input.includes('ArrowUp') && this.game.player.onGround()) {
             this.game.player.setState(States.JUMPING, 1);
         }
         else if (input.includes('Enter')&& this.game.player.stamina > 10) {
