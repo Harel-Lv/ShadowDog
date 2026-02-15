@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days')
 );
 
 CREATE TABLE IF NOT EXISTS scores (
@@ -59,7 +59,9 @@ BEGIN
 END
 $$;
 ALTER TABLE user_sessions
-  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days');
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days');
+ALTER TABLE user_sessions
+  ALTER COLUMN expires_at SET DEFAULT (NOW() + INTERVAL '7 days');
 
 DROP INDEX IF EXISTS scores_name_difficulty_idx;
 CREATE UNIQUE INDEX IF NOT EXISTS scores_user_difficulty_idx ON scores (user_id, difficulty);
@@ -68,3 +70,4 @@ CREATE INDEX IF NOT EXISTS user_sessions_user_id_idx ON user_sessions (user_id);
 CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions (expires_at);
 CREATE INDEX IF NOT EXISTS game_sessions_user_id_idx ON game_sessions (user_id);
 CREATE INDEX IF NOT EXISTS game_sessions_started_at_idx ON game_sessions (started_at);
+CREATE INDEX IF NOT EXISTS request_rate_limits_bucket_start_idx ON request_rate_limits (bucket_start);

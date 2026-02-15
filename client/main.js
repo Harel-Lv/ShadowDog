@@ -27,6 +27,11 @@ window.addEventListener('load', () => {
         const adminScreen = document.getElementById('adminScreen');
         const adminOverview = document.getElementById('adminOverview');
         const adminWeeklyTrend = document.getElementById('adminWeeklyTrend');
+        const adminActiveHours = document.getElementById('adminActiveHours');
+        const adminTrendTitle = document.getElementById('adminTrendTitle');
+        const adminTrend7Button = document.getElementById('adminTrend7Button');
+        const adminTrend30Button = document.getElementById('adminTrend30Button');
+        const adminUserSearch = document.getElementById('adminUserSearch');
         const adminUsersBody = document.getElementById('adminUsersBody');
         const adminBackButton = document.getElementById('adminBackButton');
         const resetStatsButton = document.getElementById('resetStatsButton');
@@ -86,6 +91,12 @@ window.addEventListener('load', () => {
         let adminTokenResolver = null;
         let toastTimer = null;
         let activeGameSessionId = null;
+        const TREND_RANGE_STORAGE_KEY = 'shadowdog_admin_trend_days';
+        const normalizeTrendDays = (value) => {
+            const parsed = Number.parseInt(String(value || ''), 10);
+            return parsed === 30 ? 30 : 7;
+        };
+        let selectedTrendDays = normalizeTrendDays(localStorage.getItem(TREND_RANGE_STORAGE_KEY));
         const audio = new GameAudio({ muted: savedAudioMuted });
         const unlockAndStartBgm = () => {
             audio.ensureStarted();
@@ -361,16 +372,52 @@ window.addEventListener('load', () => {
             return `${seconds}s`;
         }
 
+        function formatPercent(numerator, denominator) {
+            const num = Number(numerator || 0);
+            const den = Number(denominator || 0);
+            if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0) return '0%';
+            return `${((num / den) * 100).toFixed(1)}%`;
+        }
+
+        function getClientTimezoneOffsetMinutes() {
+            const offset = new Date().getTimezoneOffset();
+            if (!Number.isInteger(offset)) return 0;
+            return Math.max(-840, Math.min(840, offset));
+        }
+
         function formatShortDay(dateLike) {
             const date = new Date(dateLike);
             if (Number.isNaN(date.getTime())) return String(dateLike || '');
             return date.toLocaleDateString(undefined, { weekday: 'short' });
         }
 
+        function updateTrendRangeUI() {
+            if (adminTrend7Button) {
+                adminTrend7Button.classList.toggle('is-active', selectedTrendDays === 7);
+            }
+            if (adminTrend30Button) {
+                adminTrend30Button.classList.toggle('is-active', selectedTrendDays === 30);
+            }
+            if (adminTrendTitle) {
+                adminTrendTitle.textContent = `Player Trend (${selectedTrendDays} Days)`;
+            }
+        }
+
         function renderWeeklyTrendChart(container, rows) {
             if (!container) return;
-            const data = Array.isArray(rows) ? rows.slice(0, 7) : [];
-            if (data.length === 0) {
+            const rawRows = Array.isArray(rows) ? rows : [];
+            const normalized = rawRows
+                .map((row) => {
+                    const date = new Date(row?.day);
+                    const users = Math.max(0, Number(row?.users || 0));
+                    if (Number.isNaN(date.getTime())) return null;
+                    return { day: date, users };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.day.getTime() - b.day.getTime())
+                .slice(-Math.max(1, normalizeTrendDays(selectedTrendDays)));
+
+            if (normalized.length === 0) {
                 container.innerHTML = '';
                 const emptyState = document.createElement('div');
                 emptyState.className = 'adminTrendLabel';
@@ -378,30 +425,133 @@ window.addEventListener('load', () => {
                 container.appendChild(emptyState);
                 return;
             }
+
+            const niceAxisMax = (value) => {
+                if (!Number.isFinite(value) || value <= 1) return 1;
+                const exponent = Math.floor(Math.log10(value));
+                const fraction = value / (10 ** exponent);
+                let niceFraction = 1;
+                if (fraction <= 1) niceFraction = 1;
+                else if (fraction <= 2) niceFraction = 2;
+                else if (fraction <= 5) niceFraction = 5;
+                else niceFraction = 10;
+                return niceFraction * (10 ** exponent);
+            };
+
             const width = 920;
-            const height = 180;
-            const padX = 32;
-            const padY = 20;
-            const plotW = width - padX * 2;
-            const plotH = height - padY * 2;
-            const maxUsers = Math.max(1, ...data.map((d) => Number(d?.users || 0)));
-            const points = data.map((d, i) => {
-                const x = padX + ((data.length === 1 ? 0 : i / (data.length - 1)) * plotW);
-                const y = padY + (1 - (Number(d?.users || 0) / maxUsers)) * plotH;
-                return { x, y, label: formatShortDay(d?.day), users: Number(d?.users || 0) };
+            const height = 220;
+            const padLeft = 54;
+            const padRight = 18;
+            const padTop = 20;
+            const padBottom = 36;
+            const plotW = width - padLeft - padRight;
+            const plotH = height - padTop - padBottom;
+            const maxUsersRaw = Math.max(1, ...normalized.map((d) => d.users));
+            const axisMax = niceAxisMax(maxUsersRaw);
+            const yTicks = 4;
+            const yTickStep = axisMax / yTicks;
+
+            const points = normalized.map((d, i) => {
+                const ratioX = normalized.length === 1 ? 0 : i / (normalized.length - 1);
+                const x = padLeft + ratioX * plotW;
+                const y = padTop + (1 - (d.users / axisMax)) * plotH;
+                const dayLabel = d.day.toLocaleDateString(undefined, { weekday: 'short' });
+                const dateLabel = d.day.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+                return {
+                    x,
+                    y,
+                    users: d.users,
+                    dayLabel,
+                    xLabel: `${dayLabel} ${dateLabel}`,
+                    titleLabel: d.day.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+                };
             });
-            const dPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
-            const pointsSvg = points.map((p) => `<circle class="adminTrendDot" cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="3.5"><title>${escapeHtml(p.label)}: ${Number(p.users) || 0} players</title></circle>`).join('');
-            const labelsSvg = points.map((p) => `<text class="adminTrendLabel" x="${p.x.toFixed(2)}" y="${(height - 4).toFixed(2)}" text-anchor="middle">${escapeHtml(p.label)}</text>`).join('');
+
+            const linePath = points
+                .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+                .join(' ');
+            const areaPath = `${linePath} L ${(padLeft + plotW).toFixed(2)} ${(padTop + plotH).toFixed(2)} L ${padLeft.toFixed(2)} ${(padTop + plotH).toFixed(2)} Z`;
+
+            const yGridSvg = Array.from({ length: yTicks + 1 }, (_, i) => {
+                const value = yTickStep * (yTicks - i);
+                const y = padTop + (i / yTicks) * plotH;
+                return `
+                    <line class="adminTrendGrid" x1="${padLeft}" y1="${y.toFixed(2)}" x2="${(padLeft + plotW).toFixed(2)}" y2="${y.toFixed(2)}"></line>
+                    <text class="adminTrendYLabel" x="${(padLeft - 8).toFixed(2)}" y="${(y + 4).toFixed(2)}" text-anchor="end">${Math.round(value)}</text>
+                `;
+            }).join('');
+
+            const pointsSvg = points
+                .map((p) => `
+                    <circle class="adminTrendDot" cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="4">
+                        <title>${escapeHtml(p.titleLabel)}: ${Math.round(p.users)} players</title>
+                    </circle>
+                `)
+                .join('');
+
+            const labelStep = points.length <= 10 ? 1 : Math.ceil(points.length / 8);
+            const xLabelsSvg = points
+                .map((p, i) => {
+                    const isLast = i === points.length - 1;
+                    if (!isLast && i % labelStep !== 0) return '';
+                    return `<text class="adminTrendXLabel" x="${p.x.toFixed(2)}" y="${(height - 10).toFixed(2)}" text-anchor="middle">${escapeHtml(p.xLabel)}</text>`;
+                })
+                .join('');
+
+            const peak = points.reduce((best, p) => (p.users > best.users ? p : best), points[0]);
+            const last = points[points.length - 1];
+
             container.innerHTML = `
                 <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Weekly connected players trend">
-                    <line class="adminTrendAxis" x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}"></line>
-                    <line class="adminTrendAxis" x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}"></line>
-                    <path class="adminTrendPath" d="${dPath}"></path>
+                    ${yGridSvg}
+                    <line class="adminTrendAxis" x1="${padLeft}" y1="${(padTop + plotH).toFixed(2)}" x2="${(padLeft + plotW).toFixed(2)}" y2="${(padTop + plotH).toFixed(2)}"></line>
+                    <line class="adminTrendAxis" x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${(padTop + plotH).toFixed(2)}"></line>
+                    <path class="adminTrendArea" d="${areaPath}"></path>
+                    <path class="adminTrendPath" d="${linePath}"></path>
                     ${pointsSvg}
-                    ${labelsSvg}
+                    ${xLabelsSvg}
                 </svg>
+                <div class="adminTrendMeta">
+                    <span class="adminTrendStat"><strong>Peak:</strong> ${Math.round(peak.users)} (${escapeHtml(peak.titleLabel)})</span>
+                    <span class="adminTrendStat"><strong>Latest:</strong> ${Math.round(last.users)} (${escapeHtml(last.titleLabel)})</span>
+                </div>
             `;
+        }
+
+        function renderActiveHoursHeatmap(container, rows) {
+            if (!container) return;
+            const map = new Map();
+            if (Array.isArray(rows)) {
+                rows.forEach((row) => {
+                    const hour = Number.parseInt(String(row?.hour ?? ''), 10);
+                    if (!Number.isInteger(hour) || hour < 0 || hour > 23) return;
+                    map.set(hour, {
+                        sessions: Math.max(0, Number(row?.sessions || 0)),
+                        users: Math.max(0, Number(row?.users || 0))
+                    });
+                });
+            }
+            const hours = Array.from({ length: 24 }, (_, hour) => {
+                const item = map.get(hour) || { sessions: 0, users: 0 };
+                return { hour, sessions: item.sessions, users: item.users };
+            });
+            const maxSessions = Math.max(1, ...hours.map((h) => h.sessions));
+            container.innerHTML = '';
+            hours.forEach((item) => {
+                const intensity = item.sessions / maxSessions;
+                const alpha = 0.08 + intensity * 0.62;
+                const borderAlpha = 0.15 + intensity * 0.35;
+                const cell = document.createElement('div');
+                cell.className = 'adminHeatmapCell';
+                cell.style.background = `rgba(0, 255, 204, ${alpha.toFixed(3)})`;
+                cell.style.borderColor = `rgba(0, 255, 204, ${borderAlpha.toFixed(3)})`;
+                cell.title = `${String(item.hour).padStart(2, '0')}:00 - Sessions: ${Math.round(item.sessions)}, Users: ${Math.round(item.users)}`;
+                cell.innerHTML = `
+                    <span class="adminHeatmapHour">${String(item.hour).padStart(2, '0')}:00</span>
+                    <span class="adminHeatmapValue">${Math.round(item.sessions)}</span>
+                `;
+                container.appendChild(cell);
+            });
         }
 
         async function adminFetch(path) {
@@ -415,20 +565,48 @@ window.addEventListener('load', () => {
             return data;
         }
 
+        async function fetchTrafficTrend(days) {
+            const normalizedDays = normalizeTrendDays(days);
+            const tzOffset = getClientTimezoneOffsetMinutes();
+            try {
+                const traffic = await adminFetch(`/admin/traffic?days=${normalizedDays}&tz_offset_min=${tzOffset}`);
+                return Array.isArray(traffic) ? traffic : [];
+            } catch (err) {
+                const message = String(err?.message || '');
+                if (!message.includes('(404)')) throw err;
+                if (normalizedDays === 7) {
+                    const fallback = await adminFetch(`/admin/traffic-week?tz_offset_min=${tzOffset}`).catch(() => []);
+                    return Array.isArray(fallback) ? fallback : [];
+                }
+                throw new Error('30-day trend is not supported by the current server deployment. Redeploy API to latest version.');
+            }
+        }
+
         async function openAdminPanel() {
             if (!userCanSeeAdminReset()) return;
+            updateTrendRangeUI();
+            const renderUsersStatusRow = (message) => {
+                if (!adminUsersBody) return;
+                adminUsersBody.innerHTML = `<tr class="adminTableStatusRow"><td colspan="9">${escapeHtml(message)}</td></tr>`;
+            };
+            if (adminUserSearch) adminUserSearch.value = '';
+            renderUsersStatusRow('Loading players...');
             try {
                 let overview;
                 let users;
-                let weeklyTraffic = [];
+                let trendTraffic = [];
+                let activeHours = [];
                 try {
-                    const [dashboard, traffic] = await Promise.all([
+                    const tzOffset = getClientTimezoneOffsetMinutes();
+                    const [dashboard, traffic, hourly] = await Promise.all([
                         adminFetch('/admin/dashboard?limit=200'),
-                        adminFetch('/admin/traffic-week').catch(() => [])
+                        fetchTrafficTrend(selectedTrendDays),
+                        adminFetch(`/admin/active-hours?tz_offset_min=${tzOffset}`).catch(() => [])
                     ]);
                     overview = dashboard?.overview || {};
                     users = Array.isArray(dashboard?.users) ? dashboard.users : [];
-                    weeklyTraffic = Array.isArray(traffic) ? traffic : [];
+                    trendTraffic = Array.isArray(traffic) ? traffic : [];
+                    activeHours = Array.isArray(hourly) ? hourly : [];
                 } catch (err) {
                     const message = String(err?.message || '');
                     if (!message.includes('(404)')) throw err;
@@ -438,83 +616,112 @@ window.addEventListener('load', () => {
                     ]);
                     overview = fallbackOverview || {};
                     users = Array.isArray(fallbackUsers) ? fallbackUsers : [];
-                    weeklyTraffic = await adminFetch('/admin/traffic-week').catch(() => []);
+                    trendTraffic = await fetchTrafficTrend(selectedTrendDays);
+                    activeHours = await adminFetch(`/admin/active-hours?tz_offset_min=${getClientTimezoneOffsetMinutes()}`).catch(() => []);
                 }
                 const totalPlay = formatDuration(Number(overview.total_play_time_ms || 0));
+                const totalGames = Number(overview.total_games || 0);
+                const totalWins = Number(overview.total_wins || 0);
                 adminOverview.innerHTML = `
                     <div><strong>Total users:</strong> ${escapeHtml(overview.total_users ?? 0)}</div>
-                    <div><strong>Total games:</strong> ${escapeHtml(overview.total_games ?? 0)}</div>
+                    <div><strong>Total games:</strong> ${escapeHtml(totalGames)}</div>
                     <div><strong>Total play time:</strong> ${escapeHtml(totalPlay)}</div>
-                    <div><strong>Total wins:</strong> ${escapeHtml(overview.total_wins ?? 0)}</div>
+                    <div><strong>Total wins:</strong> ${escapeHtml(totalWins)}</div>
+                    <div><strong>Win rate:</strong> ${escapeHtml(formatPercent(totalWins, totalGames))}</div>
                 `;
-                renderWeeklyTrendChart(adminWeeklyTrend, weeklyTraffic);
-                adminUsersBody.innerHTML = '';
-                users
+                renderWeeklyTrendChart(adminWeeklyTrend, trendTraffic);
+                renderActiveHoursHeatmap(adminActiveHours, activeHours);
+                const sortedUsers = users
                     .slice()
-                    .sort((a, b) => String(a?.username || '').localeCompare(String(b?.username || ''), undefined, { sensitivity: 'base' }))
-                    .forEach((u) => {
-                    const tr = document.createElement('tr');
-                    const registered = u.created_at ? new Date(u.created_at).toLocaleString() : '-';
-                    const lastPlayed = u.last_played_at ? new Date(u.last_played_at).toLocaleString() : '-';
-                    const userId = Number(u.id || 0);
-                    const canDelete = Number.isInteger(userId) && userId > 0 && String(u.username || '').trim().toLowerCase() !== adminUsername;
-                    tr.innerHTML = `
-                        <td>${escapeHtml(u.username || '-')}</td>
-                        <td>${escapeHtml(registered)}</td>
-                        <td>${escapeHtml(formatDuration(Number(u.total_play_time_ms || 0)))}</td>
-                        <td>${escapeHtml(u.games_played ?? 0)}</td>
-                        <td>${escapeHtml(u.games_won ?? 0)}</td>
-                        <td>${escapeHtml(u.best_score ?? 0)}</td>
-                        <td>${escapeHtml(lastPlayed)}</td>
-                        <td>${canDelete ? `<button type="button" class="adminDeleteBtn" data-user-id="${userId}" data-username="${escapeHtml(String(u.username || ''))}">Delete</button>` : '-'}</td>
-                    `;
-                    adminUsersBody.appendChild(tr);
-                });
-                adminUsersBody.querySelectorAll('.adminDeleteBtn').forEach((btn) => {
-                    btn.addEventListener('click', async () => {
-                        const userId = Number(btn.getAttribute('data-user-id') || 0);
-                        const username = String(btn.getAttribute('data-username') || '');
-                        if (!Number.isInteger(userId) || userId <= 0) return;
-                        if (!window.confirm(`Delete player "${username}" completely? This also removes their high scores and statistics.`)) {
-                            return;
-                        }
-                        const adminToken = await requestAdminToken('delete this player');
-                        if (!adminToken) return;
-                        const headers = { 'x-admin-token': adminToken.trim() };
-                        const res = await apiFetch(`/admin/users/${userId}`, {
-                            method: 'DELETE',
-                            headers
-                        }).catch(() => null);
-                        if (!res) {
-                            showToast('Network error while deleting player.', 'error');
-                            return;
-                        }
-                        const payload = await res.json().catch(() => ({}));
-                        if (res.status === 401) {
-                            showToast('Login as admin is required.', 'error');
-                            return;
-                        }
-                        if (res.status === 403) {
-                            showToast('Forbidden: admin token or account is invalid.', 'error');
-                            return;
-                        }
-                        if (res.status === 404) {
-                            showToast('Player was not found.', 'error');
-                            return;
-                        }
-                        if (!res.ok) {
-                            showToast(payload.error || 'Failed to delete player.', 'error');
-                            return;
-                        }
-                        showToast(`Player "${username}" deleted.`, 'success');
-                        openAdminPanel();
+                    .sort((a, b) => String(a?.username || '').localeCompare(String(b?.username || ''), undefined, { sensitivity: 'base' }));
+                const renderAdminUsersRows = () => {
+                    const query = String(adminUserSearch?.value || '').trim().toLowerCase();
+                    const visibleUsers = query
+                        ? sortedUsers.filter((u) => String(u?.username || '').toLowerCase().includes(query))
+                        : sortedUsers;
+                    adminUsersBody.innerHTML = '';
+                    if (visibleUsers.length === 0) {
+                        renderUsersStatusRow('No matching users');
+                        return;
+                    }
+                    visibleUsers.forEach((u) => {
+                        const tr = document.createElement('tr');
+                        const registered = u.created_at ? new Date(u.created_at).toLocaleString() : '-';
+                        const lastPlayed = u.last_played_at ? new Date(u.last_played_at).toLocaleString() : '-';
+                        const userId = Number(u.id || 0);
+                        const gamesPlayed = Number(u.games_played || 0);
+                        const gamesWon = Number(u.games_won || 0);
+                        const canDelete = Number.isInteger(userId) && userId > 0 && String(u.username || '').trim().toLowerCase() !== adminUsername;
+                        tr.innerHTML = `
+                            <td>${escapeHtml(u.username || '-')}</td>
+                            <td>${escapeHtml(registered)}</td>
+                            <td>${escapeHtml(formatDuration(Number(u.total_play_time_ms || 0)))}</td>
+                            <td>${escapeHtml(gamesPlayed)}</td>
+                            <td>${escapeHtml(gamesWon)}</td>
+                            <td>${escapeHtml(formatPercent(gamesWon, gamesPlayed))}</td>
+                            <td>${escapeHtml(u.best_score ?? 0)}</td>
+                            <td>${escapeHtml(lastPlayed)}</td>
+                            <td>${canDelete ? `<button type="button" class="adminDeleteBtn" data-user-id="${userId}" data-username="${escapeHtml(String(u.username || ''))}">Delete</button>` : '-'}</td>
+                        `;
+                        adminUsersBody.appendChild(tr);
                     });
-                });
+                    adminUsersBody.querySelectorAll('.adminDeleteBtn').forEach((btn) => {
+                        btn.addEventListener('click', async () => {
+                            const userId = Number(btn.getAttribute('data-user-id') || 0);
+                            const username = String(btn.getAttribute('data-username') || '');
+                            if (!Number.isInteger(userId) || userId <= 0) return;
+                            if (!window.confirm(`Delete player "${username}" completely? This also removes their high scores and statistics.`)) {
+                                return;
+                            }
+                            const adminToken = await requestAdminToken('delete this player');
+                            if (!adminToken) return;
+                            const headers = { 'x-admin-token': adminToken.trim() };
+                            const res = await apiFetch(`/admin/users/${userId}`, {
+                                method: 'DELETE',
+                                headers
+                            }).catch(() => null);
+                            if (!res) {
+                                showToast('Network error while deleting player.', 'error');
+                                return;
+                            }
+                            const payload = await res.json().catch(() => ({}));
+                            if (res.status === 401) {
+                                showToast('Login as admin is required.', 'error');
+                                return;
+                            }
+                            if (res.status === 403) {
+                                showToast('Forbidden: admin token or account is invalid.', 'error');
+                                return;
+                            }
+                            if (res.status === 404) {
+                                showToast('Player was not found.', 'error');
+                                return;
+                            }
+                            if (!res.ok) {
+                                showToast(payload.error || 'Failed to delete player.', 'error');
+                                return;
+                            }
+                            showToast(`Player "${username}" deleted.`, 'success');
+                            openAdminPanel();
+                        });
+                    });
+                };
+                renderAdminUsersRows();
+                if (adminUserSearch) {
+                    adminUserSearch.oninput = () => {
+                        renderAdminUsersRows();
+                    };
+                }
                 mainMenu.style.display = 'none';
                 scoresScreen.style.display = 'none';
                 if (adminScreen) adminScreen.style.display = 'flex';
                 updateTouchControlsVisibility();
             } catch (err) {
+                renderUsersStatusRow(`Failed to load players: ${String(err?.message || 'Unknown error')}`);
+                mainMenu.style.display = 'none';
+                scoresScreen.style.display = 'none';
+                if (adminScreen) adminScreen.style.display = 'flex';
+                updateTouchControlsVisibility();
                 showToast(err.message || 'Failed to open admin panel', 'error');
             }
         }
@@ -942,6 +1149,30 @@ window.addEventListener('load', () => {
         if (adminStatsButton) {
             adminStatsButton.addEventListener('click', () => {
                 openAdminPanel();
+            });
+        }
+
+        if (adminTrend7Button) {
+            adminTrend7Button.addEventListener('click', () => {
+                if (selectedTrendDays === 7) return;
+                selectedTrendDays = 7;
+                localStorage.setItem(TREND_RANGE_STORAGE_KEY, '7');
+                updateTrendRangeUI();
+                if (adminScreen && adminScreen.style.display === 'flex') {
+                    openAdminPanel();
+                }
+            });
+        }
+
+        if (adminTrend30Button) {
+            adminTrend30Button.addEventListener('click', () => {
+                if (selectedTrendDays === 30) return;
+                selectedTrendDays = 30;
+                localStorage.setItem(TREND_RANGE_STORAGE_KEY, '30');
+                updateTrendRangeUI();
+                if (adminScreen && adminScreen.style.display === 'flex') {
+                    openAdminPanel();
+                }
             });
         }
 

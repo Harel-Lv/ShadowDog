@@ -76,6 +76,7 @@
   </div>
   <div id="scoresScreen" style="display: none;">
     <h2>High Scores</h2>
+    <p class="scoresNotice">The player ranked 1st in Hard mode at the end of the week will be awarded a cash prize.</p>
     <div class="scoresGrid">
       <div class="scoresColumn">
         <h3>Easy</h3>
@@ -99,8 +100,18 @@
     <h2>Admin Dashboard</h2>
     <div id="adminOverview" class="adminOverview"></div>
     <div class="adminTrendCard">
-      <h3>Weekly Player Trend</h3>
+      <div class="adminTrendHeader">
+        <h3 id="adminTrendTitle">Player Trend (7 Days)</h3>
+        <div class="adminTrendRange" role="group" aria-label="Trend range">
+          <button id="adminTrend7Button" type="button" class="adminTrendRangeBtn is-active">7 Days</button>
+          <button id="adminTrend30Button" type="button" class="adminTrendRangeBtn">30 Days</button>
+        </div>
+      </div>
       <div id="adminWeeklyTrend" class="adminTrendChart"></div>
+    </div>
+    <h3 class="adminSectionTitle">Players Statistics</h3>
+    <div class="adminTableControls">
+      <input id="adminUserSearch" type="search" class="adminUserSearch" placeholder="Search user..." aria-label="Search user">
     </div>
     <div class="adminTableWrap">
       <table class="adminTable">
@@ -111,6 +122,7 @@
             <th>Total Play Time</th>
             <th>Games</th>
             <th>Wins</th>
+            <th>Win Rate</th>
             <th>Best Score</th>
             <th>Last Played</th>
             <th>Actions</th>
@@ -118,6 +130,10 @@
         </thead>
         <tbody id="adminUsersBody"></tbody>
       </table>
+    </div>
+    <div class="adminTrendCard">
+      <h3>Active Hours (Last 30 Days)</h3>
+      <div id="adminActiveHours" class="adminHeatmap"></div>
     </div>
     <div class="scoresActions">
       <button id="resetStatsButton" style="display: none;">Reset Statistics</button>

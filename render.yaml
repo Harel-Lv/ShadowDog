@@ -40,10 +40,20 @@ services:
         value: "5"
       - key: AUTH_IDENTITY_RATE_LIMIT_WINDOW_MS
         value: "60000"
+      - key: ADMIN_READ_RATE_LIMIT_MAX
+        value: "60"
+      - key: ADMIN_READ_RATE_LIMIT_WINDOW_MS
+        value: "60000"
       - key: ANALYTICS_RATE_LIMIT_MAX
         value: "120"
       - key: ANALYTICS_RATE_LIMIT_WINDOW_MS
         value: "60000"
+      - key: STATS_CACHE_ENABLED
+        value: "true"
+      - key: STATS_CACHE_TTL_MS
+        value: "15000"
+      - key: STATS_CACHE_MAX_ENTRIES
+        value: "200"
       - key: RATE_LIMITER_MAX_ENTRIES
         value: "10000"
       - key: API_BODY_LIMIT_BYTES

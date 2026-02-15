@@ -42,6 +42,14 @@ Run server tests with:
 
 `cd server && npm test`
 
+Run UI E2E browser tests (Statistics screen: chart + heatmap + search) with:
+
+`cd server && npx playwright install chromium && npm run test:e2e:ui`
+
+Run all tests together:
+
+`cd server && npm run test:all`
+
 ## Score rate limit
 
 `POST /scores` is rate-limited per IP.
@@ -55,6 +63,8 @@ Optional server env vars:
 
 - `ADMIN_RATE_LIMIT_MAX` (default: `5`)
 - `ADMIN_RATE_LIMIT_WINDOW_MS` (default: `60000`)
+- `ADMIN_READ_RATE_LIMIT_MAX` (default: `60`) for admin read endpoints (`/admin/dashboard`, `/admin/overview`, `/admin/users`, `/admin/traffic`, `/admin/active-hours`)
+- `ADMIN_READ_RATE_LIMIT_WINDOW_MS` (default: `60000`)
 
 ## Auth limits and session TTL
 
@@ -71,6 +81,9 @@ Optional server env vars:
 - `SESSION_TTL_MS` (default: `604800000` = 7 days)
 - `TRUST_PROXY` (default: `false`, recommended `1` behind a single reverse proxy hop)
 - `AUTO_MIGRATE_ON_START` (default: `false`; enable only if you want schema bootstrap on startup)
+- `STATS_CACHE_ENABLED` (default: `true`; in-memory cache for admin statistics endpoints)
+- `STATS_CACHE_TTL_MS` (default: `15000`)
+- `STATS_CACHE_MAX_ENTRIES` (default: `200`)
 
 Note: browser auth now uses an `HttpOnly` session cookie by default (not accessible from JavaScript).
 

@@ -223,6 +223,33 @@ class FakePool {
       return { rows: sanitized };
     }
 
+    if (
+      normalizedSql.includes('FROM day_buckets db') &&
+      normalizedSql.includes('COUNT(gs.*)::int AS sessions') &&
+      normalizedSql.includes('COUNT(DISTINCT gs.user_id)::int AS users')
+    ) {
+      const days = Number(params[0] || 7);
+      const rows = Array.from({ length: days }, (_, i) => ({
+        day: new Date(Date.now() - ((days - 1 - i) * 24 * 60 * 60 * 1000)).toISOString(),
+        sessions: 0,
+        users: 0,
+      }));
+      return { rows };
+    }
+
+    if (
+      normalizedSql.includes('sessions_by_hour AS') &&
+      normalizedSql.includes('hour_buckets AS') &&
+      normalizedSql.includes('COALESCE(sh.sessions, 0)::int AS sessions')
+    ) {
+      const rows = Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        sessions: 0,
+        users: 0,
+      }));
+      return { rows };
+    }
+
     throw new Error(`Unexpected SQL in test: ${normalizedSql}`);
   }
 }
@@ -954,5 +981,51 @@ test('DELETE /admin/users/:id rejects deleting own admin account', async () => {
     });
     assert.equal(res.status, 400);
     assert.deepEqual(res.body, { error: 'Cannot delete your own admin account' });
+  });
+});
+
+test('GET /admin/traffic supports 30 days range for admin', async () => {
+  await withServer(async ({ port, pool }) => {
+    const adminSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const adminToken = latestTokenForUser(pool, adminSignup.body.user.id);
+
+    const traffic = await sendJson({
+      port,
+      method: 'GET',
+      path: '/admin/traffic?days=30&tz_offset_min=-120',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(traffic.status, 200);
+    assert.ok(Array.isArray(traffic.body));
+    assert.equal(traffic.body.length, 30);
+  });
+});
+
+test('GET /admin/active-hours returns 24 buckets for admin', async () => {
+  await withServer(async ({ port, pool }) => {
+    const adminSignup = await sendJson({
+      port,
+      method: 'POST',
+      path: '/auth/signup',
+      body: { username: 'admin', password: 'secret123' },
+    });
+    const adminToken = latestTokenForUser(pool, adminSignup.body.user.id);
+
+    const hours = await sendJson({
+      port,
+      method: 'GET',
+      path: '/admin/active-hours?tz_offset_min=180',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(hours.status, 200);
+    assert.ok(Array.isArray(hours.body));
+    assert.equal(hours.body.length, 24);
+    assert.deepEqual(hours.body[0], { hour: 0, sessions: 0, users: 0 });
+    assert.deepEqual(hours.body[23], { hour: 23, sessions: 0, users: 0 });
   });
 });

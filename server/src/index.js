@@ -155,7 +155,7 @@ async function ensureSchema(pool) {
       token TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days')
     )
   `);
   await pool.query(`
@@ -208,7 +208,11 @@ async function ensureSchema(pool) {
   `);
   await pool.query(`
     ALTER TABLE user_sessions
-      ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
+      ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days')
+  `);
+  await pool.query(`
+    ALTER TABLE user_sessions
+      ALTER COLUMN expires_at SET DEFAULT (NOW() + INTERVAL '7 days')
   `);
   await pool.query('DROP INDEX IF EXISTS scores_name_difficulty_idx');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS scores_user_difficulty_idx ON scores (user_id, difficulty)');
@@ -217,6 +221,7 @@ async function ensureSchema(pool) {
   await pool.query('CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions (expires_at)');
   await pool.query('CREATE INDEX IF NOT EXISTS game_sessions_user_id_idx ON game_sessions (user_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS game_sessions_started_at_idx ON game_sessions (started_at)');
+  await pool.query('CREATE INDEX IF NOT EXISTS request_rate_limits_bucket_start_idx ON request_rate_limits (bucket_start)');
 }
 
 async function hasRequiredSchema(pool, { requireRateLimitTable = false } = {}) {
@@ -366,6 +371,11 @@ export function createApp({
   scoreRateLimitWindowMs = parsePositiveInt(process.env.SCORE_RATE_LIMIT_WINDOW_MS, 60000),
   adminRateLimitMax = parsePositiveInt(process.env.ADMIN_RATE_LIMIT_MAX, 5),
   adminRateLimitWindowMs = parsePositiveInt(process.env.ADMIN_RATE_LIMIT_WINDOW_MS, 60000),
+  adminReadRateLimitMax = parsePositiveInt(process.env.ADMIN_READ_RATE_LIMIT_MAX, 60),
+  adminReadRateLimitWindowMs = parsePositiveInt(process.env.ADMIN_READ_RATE_LIMIT_WINDOW_MS, 60000),
+  statsCacheEnabled = parseBoolean(process.env.STATS_CACHE_ENABLED, true),
+  statsCacheTtlMs = parsePositiveInt(process.env.STATS_CACHE_TTL_MS, 15000),
+  statsCacheMaxEntries = parsePositiveInt(process.env.STATS_CACHE_MAX_ENTRIES, 200),
   authRateLimitMax = parsePositiveInt(process.env.AUTH_RATE_LIMIT_MAX, 10),
   authRateLimitWindowMs = parsePositiveInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60000),
   authIdentityRateLimitMax = parsePositiveInt(process.env.AUTH_IDENTITY_RATE_LIMIT_MAX, 5),
@@ -460,6 +470,60 @@ export function createApp({
     windowMs: adminRateLimitWindowMs,
     keyFn: (req) => normalizeIp(req),
   });
+  const adminReadRateLimitMiddleware = createRateLimiter({
+    name: 'admin_read',
+    max: adminReadRateLimitMax,
+    windowMs: adminReadRateLimitWindowMs,
+    keyFn: (req) => normalizeIp(req),
+  });
+  const statsCache = new Map();
+
+  function invalidateStatsCache() {
+    if (!statsCacheEnabled) return;
+    statsCache.clear();
+  }
+
+  function getStatsCacheKey(req, namespace) {
+    const url = req.originalUrl || req.url || '';
+    const adminId = req.user?.id || 'anon';
+    return `${namespace}|${adminId}|${url}`;
+  }
+
+  function getCachedStats(key) {
+    if (!statsCacheEnabled) return null;
+    const cached = statsCache.get(key);
+    if (!cached) return null;
+    if (cached.expiresAt <= Date.now()) {
+      statsCache.delete(key);
+      return null;
+    }
+    return cached.payload;
+  }
+
+  function setCachedStats(key, payload) {
+    if (!statsCacheEnabled) return;
+    if (statsCache.has(key)) {
+      statsCache.delete(key);
+    } else if (statsCache.size >= statsCacheMaxEntries) {
+      const firstKey = statsCache.keys().next().value;
+      if (firstKey) statsCache.delete(firstKey);
+    }
+    statsCache.set(key, {
+      payload,
+      expiresAt: Date.now() + statsCacheTtlMs,
+    });
+  }
+
+  async function sendCachedStats(req, res, namespace, producer) {
+    const cacheKey = getStatsCacheKey(req, namespace);
+    const cached = getCachedStats(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+    const payload = await producer();
+    setCachedStats(cacheKey, payload);
+    return res.json(payload);
+  }
   let lastExpiredSessionCleanupAt = 0;
   const sessionCleanupIntervalMs = Math.min(sessionTtlMs, 60 * 60 * 1000);
 
@@ -561,6 +625,7 @@ export function createApp({
       const token = await issueSession(user.id);
       const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure, sessionCookieSameSite);
       res.setHeader('Set-Cookie', cookie);
+      invalidateStatsCache();
       return res.status(201).json({ user });
     } catch (err) {
       if (err?.code === '23505') {
@@ -661,6 +726,7 @@ export function createApp({
       if (result.rows.length === 0) {
         return res.status(200).json({ ok: true, updated: false });
       }
+      invalidateStatsCache();
       return res.status(201).json(result.rows[0]);
     } catch {
       return res.status(500).json({ error: 'Failed to save score' });
@@ -675,6 +741,7 @@ export function createApp({
         RETURNING id, started_at
       `;
       const result = await pool.query(sql, [req.user.id]);
+      invalidateStatsCache();
       return res.status(201).json(result.rows[0]);
     } catch {
       return res.status(500).json({ error: 'Failed to start session' });
@@ -716,13 +783,14 @@ export function createApp({
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Session not found' });
       }
+      invalidateStatsCache();
       return res.json({ ok: true });
     } catch {
       return res.status(500).json({ error: 'Failed to end session' });
     }
   });
 
-  app.get('/admin/overview', adminRateLimitMiddleware, requireAdmin, async (_req, res) => {
+  app.get('/admin/overview', adminReadRateLimitMiddleware, requireAdmin, async (_req, res) => {
     try {
       const sql = `
         SELECT
@@ -768,19 +836,21 @@ export function createApp({
             FROM game_sessions
           ) AS total_wins
       `;
-      const result = await pool.query(sql);
-      return res.json(result.rows[0] || {
-        total_users: 0,
-        total_games: 0,
-        total_play_time_ms: 0,
-        total_wins: 0,
+      return sendCachedStats(req, res, 'admin_overview', async () => {
+        const result = await pool.query(sql);
+        return result.rows[0] || {
+          total_users: 0,
+          total_games: 0,
+          total_play_time_ms: 0,
+          total_wins: 0,
+        };
       });
     } catch {
       return res.status(500).json({ error: 'Failed to fetch overview' });
     }
   });
 
-  app.get('/admin/users', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
+  app.get('/admin/users', adminReadRateLimitMiddleware, requireAdmin, async (req, res) => {
     try {
       const parsedLimit = Number.parseInt(req.query.limit || '100', 10);
       const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 100;
@@ -841,14 +911,16 @@ export function createApp({
         ORDER BY u.username_norm ASC, u.created_at DESC
         LIMIT $1
       `;
-      const result = await pool.query(sql, [limit]);
-      return res.json(result.rows);
+      return sendCachedStats(req, res, 'admin_users', async () => {
+        const result = await pool.query(sql, [limit]);
+        return result.rows;
+      });
     } catch {
       return res.status(500).json({ error: 'Failed to fetch users stats' });
     }
   });
 
-  app.get('/admin/dashboard', adminRateLimitMiddleware, requireAdmin, async (req, res) => {
+  app.get('/admin/dashboard', adminReadRateLimitMiddleware, requireAdmin, async (req, res) => {
     try {
       const parsedLimit = Number.parseInt(req.query.limit || '200', 10);
       const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 500) : 200;
@@ -955,32 +1027,44 @@ export function createApp({
         LIMIT $1
       `;
 
-      const [overviewResult, usersResult] = await Promise.all([
-        pool.query(overviewSql),
-        pool.query(usersSql, [limit]),
-      ]);
-
-      return res.json({
-        overview: overviewResult.rows[0] || {
-          total_users: 0,
-          total_games: 0,
-          total_play_time_ms: 0,
-          total_wins: 0,
-        },
-        users: usersResult.rows || [],
+      return sendCachedStats(req, res, 'admin_dashboard', async () => {
+        const [overviewResult, usersResult] = await Promise.all([
+          pool.query(overviewSql),
+          pool.query(usersSql, [limit]),
+        ]);
+        return {
+          overview: overviewResult.rows[0] || {
+            total_users: 0,
+            total_games: 0,
+            total_play_time_ms: 0,
+            total_wins: 0,
+          },
+          users: usersResult.rows || [],
+        };
       });
     } catch {
       return res.status(500).json({ error: 'Failed to fetch dashboard' });
     }
   });
 
-  app.get('/admin/traffic-week', adminRateLimitMiddleware, requireAdmin, async (_req, res) => {
+  function parseTimezoneOffsetMinutes(rawValue) {
+    const parsed = Number.parseInt(String(rawValue ?? '0'), 10);
+    if (!Number.isInteger(parsed)) return 0;
+    return Math.min(840, Math.max(-840, parsed));
+  }
+
+  async function handleAdminTraffic(req, res, forcedDays = null) {
+    const rawDays = forcedDays ?? req.query?.days;
+    const parsedDays = Number.parseInt(String(rawDays || '7'), 10);
+    const days = parsedDays === 30 ? 30 : 7;
+    const clientOffsetMinutes = parseTimezoneOffsetMinutes(req.query?.tz_offset_min);
+    const shiftMinutes = -clientOffsetMinutes;
     try {
       const sql = `
         WITH day_buckets AS (
           SELECT generate_series(
-            (CURRENT_DATE - INTERVAL '6 days')::date,
-            CURRENT_DATE::date,
+            ((NOW() + ($2::int * INTERVAL '1 minute'))::date - (($1::int - 1) * INTERVAL '1 day'))::date,
+            (NOW() + ($2::int * INTERVAL '1 minute'))::date,
             INTERVAL '1 day'
           ) AS day_start
         )
@@ -990,21 +1074,70 @@ export function createApp({
           COUNT(DISTINCT gs.user_id)::int AS users
         FROM day_buckets db
         LEFT JOIN game_sessions gs
-          ON gs.started_at >= db.day_start
-         AND gs.started_at < (db.day_start + INTERVAL '1 day')
+          ON (gs.started_at + ($2::int * INTERVAL '1 minute')) >= db.day_start
+         AND (gs.started_at + ($2::int * INTERVAL '1 minute')) < (db.day_start + INTERVAL '1 day')
         GROUP BY db.day_start
         ORDER BY db.day_start ASC
       `;
-      const result = await pool.query(sql);
-      return res.json(Array.isArray(result.rows) ? result.rows : []);
+      return sendCachedStats(req, res, 'admin_traffic', async () => {
+        const result = await pool.query(sql, [days, shiftMinutes]);
+        return Array.isArray(result.rows) ? result.rows : [];
+      });
     } catch {
-      return res.status(500).json({ error: 'Failed to fetch weekly traffic' });
+      return res.status(500).json({ error: 'Failed to fetch traffic trend' });
+    }
+  }
+
+  app.get('/admin/traffic', adminReadRateLimitMiddleware, requireAdmin, async (req, res) => {
+    return handleAdminTraffic(req, res, null);
+  });
+
+  app.get('/admin/traffic-week', adminReadRateLimitMiddleware, requireAdmin, async (req, res) => {
+    return handleAdminTraffic(req, res, 7);
+  });
+
+  app.get('/admin/active-hours', adminReadRateLimitMiddleware, requireAdmin, async (req, res) => {
+    const clientOffsetMinutes = parseTimezoneOffsetMinutes(req.query?.tz_offset_min);
+    const shiftMinutes = -clientOffsetMinutes;
+    try {
+      const sql = `
+        WITH recent_sessions AS (
+          SELECT started_at, user_id
+          FROM game_sessions
+          WHERE started_at >= NOW() - INTERVAL '30 days'
+        ),
+        sessions_by_hour AS (
+          SELECT
+            EXTRACT(HOUR FROM (started_at + ($1::int * INTERVAL '1 minute')))::int AS hour_of_day,
+            COUNT(*)::int AS sessions,
+            COUNT(DISTINCT user_id)::int AS users
+          FROM recent_sessions
+          GROUP BY 1
+        ),
+        hour_buckets AS (
+          SELECT generate_series(0, 23) AS hour_of_day
+        )
+        SELECT
+          hb.hour_of_day::int AS hour,
+          COALESCE(sh.sessions, 0)::int AS sessions,
+          COALESCE(sh.users, 0)::int AS users
+        FROM hour_buckets hb
+        LEFT JOIN sessions_by_hour sh ON sh.hour_of_day = hb.hour_of_day
+        ORDER BY hb.hour_of_day ASC
+      `;
+      return sendCachedStats(req, res, 'admin_active_hours', async () => {
+        const result = await pool.query(sql, [shiftMinutes]);
+        return Array.isArray(result.rows) ? result.rows : [];
+      });
+    } catch {
+      return res.status(500).json({ error: 'Failed to fetch active hours' });
     }
   });
 
   app.delete('/scores', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (req, res) => {
     try {
       await pool.query('DELETE FROM scores');
+      invalidateStatsCache();
       return res.json({ ok: true });
     } catch {
       return res.status(500).json({ error: 'Failed to reset scores' });
@@ -1014,6 +1147,7 @@ export function createApp({
   app.delete('/admin/statistics', adminRateLimitMiddleware, requireAdmin, requireAdminToken, async (_req, res) => {
     try {
       const result = await pool.query('DELETE FROM game_sessions');
+      invalidateStatsCache();
       return res.json({ ok: true, deleted: result.rowCount || 0 });
     } catch {
       return res.status(500).json({ error: 'Failed to reset statistics' });
@@ -1033,6 +1167,7 @@ export function createApp({
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'User not found' });
       }
+      invalidateStatsCache();
       return res.json({ ok: true, deleted_user: result.rows[0] });
     } catch {
       return res.status(500).json({ error: 'Failed to delete user' });

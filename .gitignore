@@ -24,3 +24,7 @@ Thumbs.db
 dist/
 build/
 coverage/
+playwright-report/
+test-results/
+server/playwright-report/
+server/test-results/
