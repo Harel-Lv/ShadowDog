@@ -626,7 +626,7 @@ export function createApp({
       const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure, sessionCookieSameSite);
       res.setHeader('Set-Cookie', cookie);
       invalidateStatsCache();
-      return res.status(201).json({ user });
+      return res.status(201).json({ user, token });
     } catch (err) {
       if (err?.code === '23505') {
         return res.status(409).json({ error: 'Username already exists' });
@@ -657,7 +657,7 @@ export function createApp({
       const token = await issueSession(user.id);
       const cookie = serializeSessionCookie(sessionCookieName, token, sessionTtlMs / 1000, req.secure, sessionCookieSameSite);
       res.setHeader('Set-Cookie', cookie);
-      return res.json({ user });
+      return res.json({ user, token });
     } catch {
       return res.status(500).json({ error: 'Failed to login' });
     }

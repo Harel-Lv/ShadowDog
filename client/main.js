@@ -1071,10 +1071,16 @@ window.addEventListener('load', () => {
             }
             try {
                 const path = authMode === 'signup' ? '/auth/signup' : '/auth/login';
-                await authRequest(path, { username, password });
-                const hydratedUser = await hydrateAuthFromServer();
-                if (!hydratedUser) {
-                    throw new Error('Login failed: browser blocked session cookie');
+                const authData = await authRequest(path, { username, password });
+                const responseUser = authData?.user?.username || username;
+                const responseToken = String(authData?.token || '').trim();
+                if (responseToken) {
+                    setAuthState(responseToken, responseUser);
+                } else {
+                    const hydratedUser = await hydrateAuthFromServer();
+                    if (!hydratedUser) {
+                        throw new Error('Login failed: browser blocked session cookie');
+                    }
                 }
                 closeAuthModal();
             } catch (err) {
